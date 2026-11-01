@@ -1,0 +1,11 @@
+{
+  "name": "agent-island", "private": true, "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": {"node": ">=22.12.0"},
+  "scripts": {
+    "dev": "concurrently -k -n server,client \"npm run dev -w @agent-island/server\" \"npm run dev -w @agent-island/client\"",
+    "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/client",
+    "test": "vitest run", "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {"@types/node": "^22.0.0", "concurrently": "^9.0.0", "typescript": "^5.9.0", "vitest": "^3.2.0"}
+}
