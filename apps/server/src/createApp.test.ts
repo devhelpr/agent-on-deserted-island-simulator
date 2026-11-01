@@ -182,6 +182,55 @@ describe("simulation API", () => {
     expect(list).toHaveLength(2);
   });
 });
+describe("optional Codex runs", () => {
+  it("configures selected agents without starting a model until the scheduler requests a decision", async () => {
+    const runtime = createApp({ now: () => 0 });
+    try {
+      const response = await runtime.app.request(
+        "/api/simulations",
+        json("POST", { controller: "codex", codexAgentIds: ["alpha"] }),
+      );
+      expect(response.status).toBe(201);
+      const status = (await response.json()) as SimulationStatus;
+      const agents = await (
+        await runtime.app.request(`/api/simulations/${status.id}/agents`)
+      ).json();
+      expect(agents.map((a: { controller: string }) => a.controller)).toEqual([
+        "codex",
+        "scripted",
+        "scripted",
+      ]);
+      const decisions = await runtime.app.request(
+        `/api/simulations/${status.id}/agents/alpha/decisions`,
+      );
+      expect(await decisions.json()).toEqual([]);
+      expect(
+        (
+          await runtime.app.request(
+            "/api/simulations",
+            json("POST", {
+              controller: "codex",
+              codexAgentIds: ["someone-else"],
+            }),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await runtime.app.request(
+            "/api/simulations",
+            json("POST", {
+              controller: "codex",
+              codexAgentIds: ["alpha", "alpha"],
+            }),
+          )
+        ).status,
+      ).toBe(400);
+    } finally {
+      await runtime.stop();
+    }
+  });
+});
 describe("room-based world transport", () => {
   it("sends initial state, advancing deltas, a fresh reconnect snapshot and isolated subscriptions", async () => {
     const runtime = startServer(0, { policy: null });
@@ -209,7 +258,21 @@ describe("room-based world transport", () => {
       const update = await new Promise<{
         simulationId: string;
         state: WorldStateDto;
-      }>((resolve) => socket!.once("world:delta", resolve));
+      }>((resolve) => {
+        const listener = (value: {
+          simulationId: string;
+          state: WorldStateDto;
+        }) => {
+          if (
+            value.simulationId === "sim-001" &&
+            value.state.tick > initial.state.tick
+          ) {
+            socket!.off("world:delta", listener);
+            resolve(value);
+          }
+        };
+        socket!.on("world:delta", listener);
+      });
       const delta = update.state;
       expect(update.simulationId).toBe("sim-001");
       expect(delta.tick).toBeGreaterThan(initial.state.tick);

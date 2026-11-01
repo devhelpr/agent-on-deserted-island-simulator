@@ -11,16 +11,18 @@
   },
   "scripts": {
     "dev": "concurrently -k -n server,client \"npm run dev -w @agent-island/server\" \"npm run dev -w @agent-island/client\"",
-    "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/client",
+    "typecheck": "tsc --noEmit -p apps/server && tsc --noEmit -p apps/client && tsc --noEmit -p scripts",
     "test": "vitest run",
     "build": "npm run build --workspaces --if-present",
-    "format": "prettier --write \"apps/**/*.{ts,css,html,json}\" \"packages/**/*.{ts,json}\" package.json tsconfig.json"
+    "format": "prettier --write \"apps/**/*.{ts,css,html,json}\" \"packages/**/*.{ts,json}\" \"scripts/**/*.{ts,json}\" package.json tsconfig.json",
+    "verify:codex": "tsx scripts/verify-codex.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "concurrently": "^9.0.0",
     "prettier": "^3.9.10",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "tsx": "^4.20.0"
   }
 }

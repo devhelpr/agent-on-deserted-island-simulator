@@ -1,0 +1,107 @@
+{
+  "date": "2026-11-01T19:33:26.410Z",
+  "passed": true,
+  "cliProtocol": "Codex CLI 0.161.0 app-server v2",
+  "timeScale": 20,
+  "schedulerMode": "live",
+  "virtualDurationMs": 900200,
+  "wallDurationMs": 45015,
+  "successfulDecisions": 13,
+  "successfulMoves": 10,
+  "maxDistanceFromSpawnMeters": 171.84,
+  "threadCount": 1,
+  "worldToolCalls": 13,
+  "errors": [],
+  "sample": [
+    {
+      "tick": 10946,
+      "action": {
+        "type": "move",
+        "target": {
+          "x": 72,
+          "y": 4.73,
+          "z": 75
+        }
+      },
+      "motivation": "Try a southwest route back toward higher, reachable ground.",
+      "tools": [
+        {
+          "tool": "world_move",
+          "success": true
+        }
+      ]
+    },
+    {
+      "tick": 12248,
+      "action": {
+        "type": "move",
+        "target": {
+          "x": 65,
+          "y": 11.61,
+          "z": 30
+        }
+      },
+      "motivation": "Explore south across the higher interior terrain.",
+      "tools": [
+        {
+          "tool": "world_move",
+          "success": true
+        }
+      ]
+    },
+    {
+      "tick": 13622,
+      "action": {
+        "type": "move",
+        "target": {
+          "x": 45,
+          "y": 11.63,
+          "z": -10
+        }
+      },
+      "motivation": "Continue southwest into unexplored interior ground, away from the rocks.",
+      "tools": [
+        {
+          "tool": "world_move",
+          "success": true
+        }
+      ]
+    },
+    {
+      "tick": 15019,
+      "action": {
+        "type": "move",
+        "target": {
+          "x": 25,
+          "y": 14.62,
+          "z": -50
+        }
+      },
+      "motivation": "Explore southward through the elevated interior.",
+      "tools": [
+        {
+          "tool": "world_move",
+          "success": true
+        }
+      ]
+    },
+    {
+      "tick": 16588,
+      "action": {
+        "type": "move",
+        "target": {
+          "x": -10,
+          "y": 16.04,
+          "z": -80
+        }
+      },
+      "motivation": "Survey new ground southwest while remaining inland.",
+      "tools": [
+        {
+          "tool": "world_move",
+          "success": true
+        }
+      ]
+    }
+  ]
+}

@@ -20,6 +20,8 @@ export function createApp(
   const makeSimulation = (
     timeScale = 1,
     mode: "live" | "experiment" = "live",
+    controller: "scripted" | "codex" = "scripted",
+    codexAgentIds: string[] = ["alpha"],
   ) => {
     const simulation = new Simulation(
       `sim-${String(nextId++).padStart(3, "0")}`,
@@ -27,6 +29,7 @@ export function createApp(
       timeScale,
       mode,
       options.policy,
+      { controller, codexAgentIds },
     );
     simulations.set(simulation.id, simulation);
     return simulation;
@@ -77,6 +80,8 @@ export function createApp(
     const simulation = makeSimulation(
       input.data.timeScale,
       input.data.schedulerMode,
+      input.data.controller,
+      input.data.codexAgentIds,
     );
     return c.json(simulation.status(), 201);
   });
@@ -97,6 +102,21 @@ export function createApp(
   app.get("/api/simulations/:id/agents", (c) =>
     c.json(simulations.get(c.req.param("id"))!.engine.getState().agents),
   );
+  app.get("/api/simulations/:id/agents/:agentId/decisions", (c) => {
+    const simulation = simulations.get(c.req.param("id"))!;
+    if (!simulation.engine.observe(c.req.param("agentId")))
+      return c.json({ error: "AGENT_NOT_FOUND" }, 404);
+    const decisions =
+      simulation.codex?.journal.list(c.req.param("agentId")) ?? [];
+    return c.json(
+      decisions.map((record) => ({
+        ...record,
+        outcome: record.actionId
+          ? simulation.engine.getAction(record.actionId)
+          : undefined,
+      })),
+    );
+  });
   app.get("/api/simulations/:id/agents/:agentId/observation", (c) => {
     const observation = simulations
       .get(c.req.param("id"))!
@@ -106,12 +126,12 @@ export function createApp(
       : c.json({ error: "AGENT_NOT_FOUND" }, 404);
   });
   for (const operation of ["pause", "resume", "stop"] as const)
-    app.post(`/api/simulations/:id/${operation}`, (c) => {
+    app.post(`/api/simulations/:id/${operation}`, async (c) => {
       const simulation = simulations.get(c.req.param("id")!)!;
       simulation.advance(now());
       if (simulation.status().status === "stopped" && operation !== "stop")
         return c.json({ error: "SIMULATION_STOPPED" }, 409);
-      if (operation === "stop") simulation.stop();
+      if (operation === "stop") await simulation.stop();
       else simulation.clock[operation]();
       onChange(simulation);
       return c.json(simulation.status());
@@ -188,8 +208,8 @@ export function createApp(
     setOnChange: (listener: typeof onChange) => {
       onChange = listener;
     },
-    stop: () => {
-      for (const s of simulations.values()) s.stop();
+    stop: async () => {
+      await Promise.all([...simulations.values()].map((s) => s.stop()));
     },
   };
 }
@@ -237,7 +257,7 @@ export function startServer(
   const close = async () => {
     clearInterval(simulation);
     clearInterval(network);
-    runtime.stop();
+    await runtime.stop();
     await new Promise<void>((resolve) => io.close(() => resolve()));
   };
   return { ...runtime, server, io, close };

@@ -1,18 +1,27 @@
-import type {
-  AgentObservation,
-  SchedulerMode,
-  WorldActionInput,
+import {
+  actionSchema,
+  type AgentObservation,
+  type SchedulerMode,
+  type WorldActionInput,
 } from "../../../../packages/shared/src/index.js";
-import { WorldEngine } from "../world/WorldEngine.js";
+import { WorldEngine, type ActionSubmission } from "../world/WorldEngine.js";
+export interface PolicyProposal {
+  action: WorldActionInput;
+  onSubmitted?: (result: ActionSubmission) => void;
+  onCancelled?: () => void;
+}
+export type PolicyOutput = WorldActionInput | PolicyProposal;
 export type DecisionPolicy = (
   observation: AgentObservation,
-) => WorldActionInput | Promise<WorldActionInput>;
+  signal?: AbortSignal,
+) => PolicyOutput | Promise<PolicyOutput>;
 interface Decision {
   ready: boolean;
-  action?: WorldActionInput;
+  proposal?: PolicyProposal;
   timer?: ReturnType<typeof setTimeout>;
+  controller: AbortController;
 }
-/** One in-flight decision per agent. Experiment batches flush only when all decisions are ready. */
+/** One in-flight decision per agent; cancellation reaches the adapter, not only the scheduler's bookkeeping. */
 export class AgentScheduler {
   private readonly decisions = new Map<string, Decision>();
   private epoch = 0;
@@ -27,37 +36,59 @@ export class AgentScheduler {
       .map(([id]) => id)
       .sort();
   }
+  private discard(d: Decision) {
+    clearTimeout(d.timer);
+    d.controller.abort(new Error("DECISION_CANCELLED"));
+    d.proposal?.onCancelled?.();
+  }
   prepare(mode: SchedulerMode): boolean {
     const idle = this.engine.getIdleAgents();
     const idleIds = new Set(idle.map((a) => a.id));
     for (const [id, d] of this.decisions)
       if (!idleIds.has(id)) {
-        clearTimeout(d.timer);
+        this.discard(d);
         this.decisions.delete(id);
       }
     for (const agent of idle)
       if (!this.decisions.has(agent.id)) {
-        const decision: Decision = { ready: false };
+        const d: Decision = { ready: false, controller: new AbortController() };
         const epoch = this.epoch;
-        this.decisions.set(agent.id, decision);
-        const resolve = (action: WorldActionInput) => {
+        this.decisions.set(agent.id, d);
+        const resolve = (output: PolicyOutput) => {
+          const proposal: PolicyProposal =
+            output && typeof output === "object" && "action" in output
+              ? output
+              : { action: output as WorldActionInput };
           if (
             epoch !== this.epoch ||
-            this.decisions.get(agent.id) !== decision ||
-            decision.ready
-          )
+            this.decisions.get(agent.id) !== d ||
+            d.ready
+          ) {
+            proposal.onCancelled?.();
             return;
-          clearTimeout(decision.timer);
-          decision.action = action;
-          decision.ready = true;
+          }
+          clearTimeout(d.timer);
+          if (!actionSchema.safeParse(proposal.action).success) {
+            proposal.onCancelled?.();
+            d.proposal = { action: { type: "wait", durationMs: 1000 } };
+          } else d.proposal = proposal;
+          d.ready = true;
         };
-        const fallback = () => resolve({ type: "wait", durationMs: 1000 });
+        const fallback = () => {
+          if (!d.ready) resolve({ type: "wait", durationMs: 1000 });
+        };
         try {
-          const result = this.policy(this.engine.observe(agent.id)!);
+          const result = this.policy(
+            this.engine.observe(agent.id)!,
+            d.controller.signal,
+          );
           if (result instanceof Promise) {
-            decision.timer = setTimeout(fallback, this.timeoutMs);
-            decision.timer.unref?.();
-            void result.then(resolve, fallback);
+            d.timer = setTimeout(() => {
+              d.controller.abort(new Error("DECISION_TIMEOUT"));
+              fallback();
+            }, this.timeoutMs);
+            d.timer.unref?.();
+            void result.then(resolve, fallback).catch(fallback);
           } else resolve(result);
         } catch {
           fallback();
@@ -68,14 +99,15 @@ export class AgentScheduler {
       a < b ? -1 : a > b ? 1 : 0,
     ))
       if (d.ready) {
-        this.engine.submitAction(id, d.action);
+        const result = this.engine.submitAction(id, d.proposal!.action);
+        d.proposal?.onSubmitted?.(result);
         this.decisions.delete(id);
       }
     return true;
   }
   cancel() {
     this.epoch++;
-    for (const d of this.decisions.values()) clearTimeout(d.timer);
+    for (const d of this.decisions.values()) this.discard(d);
     this.decisions.clear();
   }
 }

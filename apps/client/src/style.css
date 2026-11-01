@@ -684,3 +684,13 @@ select:focus-visible {
     height: 400px;
   }
 }
+.runtime-status {
+  font-size: 11px;
+  line-height: 1.7;
+  color: #aebfa2;
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+#decision-list li {
+  line-height: 1.8;
+}

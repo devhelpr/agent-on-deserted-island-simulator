@@ -35,15 +35,15 @@ Acceptatie gehaald: drie scripted agents bewegen en reageren tegelijk zonder teg
 
 ## Fase 3 / Sprint 3 — Codex-integratie
 
-- [ ] S3.1 Codex app-serveradapter met thread/turn-lifecycle, hervatten, time-outs en foutregistratie.
-- [ ] S3.2 World MCP-package met observe/move/inspect/interact/pickup/drop/communicate en gevalideerde input.
-- [ ] S3.3 Agentidentiteit serverzijdig binden; geen volledige objectlijst, andere geheugens of directe wereldmutaties.
-- [ ] S3.4 Shell- en bestandstoegang uitschakelen of isoleren; toolrechten beperken.
-- [ ] S3.5 Event-driven scheduler, maximaal één actieve turn per agent en centrale actieafhandeling.
-- [ ] S3.6 Beslissingen, waarnemingen, opgegeven motivatie, toolresultaten en fouten registreren.
-- [ ] S3.7 Scripted policy behouden voor kosteloze integratietests; vastgelopen turns testen.
+- [x] S3.1 Codex app-serveradapter met thread/turn-lifecycle, hervatten, time-outs en foutregistratie.
+- [x] S3.2 World MCP-package met observe/move/inspect/interact/pickup/drop/communicate en gevalideerde input.
+- [x] S3.3 Agentidentiteit serverzijdig binden; geen volledige objectlijst, andere geheugens of directe wereldmutaties.
+- [x] S3.4 Shell- en bestandstoegang uitschakelen of isoleren; toolrechten beperken.
+- [x] S3.5 Event-driven scheduler, maximaal één actieve turn per agent en centrale actieafhandeling.
+- [x] S3.6 Beslissingen, waarnemingen, opgegeven motivatie, toolresultaten en fouten registreren.
+- [x] S3.7 Scripted policy behouden voor kosteloze integratietests; vastgelopen turns testen.
 
-Acceptatie: één echte Codex-agent verkent autonoom minimaal 15 minuten simulatietijd.
+Acceptatie gehaald: één echte Codex-agent verkende 15 minuten simulatietijd, met 13 modelbeslissingen en 10 geslaagde verplaatsingen. Zie [acceptatieverslag mijlpaal 3](docs/sprint-3-acceptance.md).
 
 ## Fase 4 / Sprint 4 — Geheugen + reset
 

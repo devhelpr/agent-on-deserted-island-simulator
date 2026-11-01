@@ -41,7 +41,7 @@ export interface AgentState {
   position: Vector3;
   orientation: number;
   status: "idle" | "queued" | "moving" | "waiting";
-  controller: "scripted";
+  controller: "scripted" | "codex";
   inventory: string[];
   activeActionId: string | null;
 }
@@ -60,6 +60,11 @@ export const actionSchema = z.discriminatedUnion("type", [
   }),
   z.strictObject({ type: z.literal("pickup"), entityId }),
   z.strictObject({ type: z.literal("drop"), entityId, target: vectorSchema }),
+  z.strictObject({
+    type: z.literal("communicate"),
+    recipientId: entityId,
+    message: z.string().min(1).max(500),
+  }),
   z.strictObject({
     type: z.literal("wait"),
     durationMs: z.number().int().min(50).max(60000),
@@ -95,6 +100,8 @@ export interface AgentObservation {
   position: Vector3;
   orientation: number;
   inventory: string[];
+  lastAction?: ActionRecord;
+  messages?: { from: string; text: string; tick: number }[];
   visibleEntities: {
     id: string;
     type: EntityType;
@@ -132,8 +139,44 @@ export const simulationSchema = z.strictObject({
   worldId: z.literal("island-48291").default("island-48291"),
   timeScale: speedSchema.shape.timeScale.default(1),
   schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
+  controller: z.enum(["scripted", "codex"]).default("scripted"),
+  codexAgentIds: z
+    .array(z.enum(["alpha", "beta", "gamma"]))
+    .min(1)
+    .max(3)
+    .refine((ids) => new Set(ids).size === ids.length)
+    .default(["alpha"]),
 });
 export type SchedulerMode = z.infer<typeof schedulerSchema>["schedulerMode"];
+export interface AgentSessionStatus {
+  agentId: string;
+  controller: "scripted" | "codex";
+  status: "idle" | "thinking" | "failed";
+  threadId: string | null;
+  turnId: string | null;
+  decisions: number;
+  lastError?: string;
+}
+export interface DecisionRecord {
+  id: string;
+  agentId: string;
+  tick: number;
+  observation: AgentObservation;
+  status: "thinking" | "proposed" | "submitted" | "failed" | "cancelled";
+  threadId?: string;
+  turnId?: string;
+  action?: WorldActionInput;
+  actionId?: string;
+  motivation?: string;
+  publicMessage?: string;
+  error?: string;
+  tools: {
+    tool: string;
+    arguments: unknown;
+    result: unknown;
+    success: boolean;
+  }[];
+}
 export interface SimulationStatus {
   id: string;
   status: "running" | "paused" | "stopped";
@@ -147,6 +190,7 @@ export interface SimulationStatus {
   droppedSimulationTimeMs: number;
   waitingForDecisions: boolean;
   pendingAgents: string[];
+  agentSessions?: AgentSessionStatus[];
 }
 export interface WorldSnapshot {
   simulation: SimulationStatus;

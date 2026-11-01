@@ -84,3 +84,19 @@ describe("decision scheduling", () => {
     }
   });
 });
+
+// Cancellation must reach the underlying model request, not just discard its eventual value.
+describe("scheduler cancellation signals", () => {
+  it("aborts in-flight policies when cancelled", () => {
+    const engine = new WorldEngine(flatWorld());
+    const signals: AbortSignal[] = [];
+    const scheduler = new AgentScheduler(engine, (_observation, signal) => {
+      signals.push(signal!);
+      return new Promise(() => {});
+    });
+    scheduler.prepare("live");
+    expect(signals).toHaveLength(3);
+    scheduler.cancel();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+});

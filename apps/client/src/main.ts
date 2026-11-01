@@ -9,17 +9,17 @@ import { IslandScene } from "./world/IslandScene";
 import "./style.css";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
-<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 02 <span>/</span> SIMULATION + ACTIES</span></header>
+<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 03 <span>/</span> AUTONOME AGENTS</span></header>
 <main><section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">EXPERIMENT · SEED <span id="seed">—</span></p><h1>Samen op onbekend terrein.</h1><p class="intro">Drie verkenners. Eén gedeeld eiland. Elke actie telt.</p></div><span class="local-badge">LOCAL FIRST ↗</span></div>
-<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="stop" type="button" disabled>Stoppen</button><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p>
+<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option></select></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
 <div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
 <div class="metrics"><div><span>WERELDTIJD</span><strong id="world-time">00:00</strong></div><div><span>SIMULATIETICK</span><strong id="tick">0</strong></div><div><span>EILAND</span><strong id="size">—</strong></div><div><span>OBJECTEN</span><strong id="entity-count">—</strong></div></div>
-<div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><ol id="events"><li>Wachten op de eerste actie…</li></ol></div>
+<div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Kies een agent en bekijk diens beslissingen.</li></ol></div>
 </section><aside><div class="panel-heading"><p class="eyebrow">IN HET VELD</p><h2>De verkenners<span>03</span></h2></div><div id="agents"></div>
-<div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
+<div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
 <div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents zoeken een pad, onderzoeken objecten en proberen stenen op te pakken. Eén object kan maar één eigenaar hebben.</p></div></div>
 <div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
-<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>Zelfstandig beslissen.</h3><p>Sprint 03 sluit echte Codex-agents aan op hun eigen waarnemingen en wereldtools.</p><span>03 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · Generator v2</span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
+<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>Ervaringen onthouden.</h3><p>Sprint 04 voegt blijvend geheugen en terugkerende cycli toe.</p><span>04 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · Generator v2</span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
 const el = (id: string) => document.getElementById(id)!;
 let scene: IslandScene | undefined;
 try {
@@ -64,9 +64,12 @@ function refreshControls() {
     "mode",
     "cancel-action",
     "observe",
+    "decisions",
   ])
     (el(id) as HTMLButtonElement).disabled = busy || !connected || !!stopped;
   button("new-run").disabled = busy || !socket.connected;
+  select("controller").disabled = busy || !socket.connected;
+  button("decisions").disabled = busy || !connected;
   select("run-select").disabled = busy || !socket.connected;
   button("pause").textContent =
     status?.status === "paused" ? "Hervatten" : "Pauzeren";
@@ -79,6 +82,17 @@ function refreshControls() {
 function updateStatus(next: SimulationStatus) {
   if (next.id !== simulationId) return;
   status = next;
+  const codex = (next.agentSessions ?? []).filter(
+    (session) => session.controller === "codex",
+  );
+  el("runtime-status").textContent = codex.length
+    ? codex
+        .map(
+          (session) =>
+            `${session.agentId}: Codex · ${session.status === "thinking" ? "Denkt na" : session.status === "failed" ? "Fout: " + session.lastError : "Klaar"} · ${session.decisions} besluiten${session.threadId ? " · thread " + session.threadId.slice(0, 8) : ""}`,
+        )
+        .join(" / ")
+    : "Scripted agents · geen modelaanroepen";
   select("speed").value = String(next.timeScale);
   select("mode").value = next.schedulerMode;
   el("simulation-status").textContent =
@@ -129,6 +143,8 @@ function update(next: WorldStateDto) {
       });
       el("agents").append(card);
     }
+    card.querySelector("small")!.textContent =
+      agent.controller === "codex" ? "Codex-agent" : "Scripted testagent";
     card.disabled = !scene;
     card.setAttribute("aria-pressed", String(selectedAgent === agent.id));
     card.querySelector(".agent-status")!.textContent = labels[agent.status];
@@ -289,7 +305,10 @@ button("new-run").addEventListener(
   "click",
   () =>
     void control(async () => {
-      const run = await request("/simulations", "POST", {});
+      const run = await request("/simulations", "POST", {
+        controller: select("controller").value,
+        codexAgentIds: ["alpha"],
+      });
       await subscribe(run.id);
       await loadRuns();
     }),
@@ -317,6 +336,27 @@ button("observe").addEventListener(
       );
       el("observation").textContent =
         `Tick ${observation.tick} · ${observation.visibleEntities.length} objecten, ${observation.visibleAgents.length} agents zichtbaar. Bereik: 25 m / 120°. ${observation.visibleEntities.map((e: { id: string }) => e.id).join(", ") || "Geen objecten in beeld."}`;
+    }),
+);
+button("decisions").addEventListener(
+  "click",
+  () =>
+    void control(async () => {
+      const records = await request(
+        `/simulations/${simulationId}/agents/${selectedAgent}/decisions`,
+      );
+      const list = el("decision-list");
+      list.replaceChildren();
+      if (!records.length) {
+        const li = document.createElement("li");
+        li.textContent = "Nog geen Codex-beslissingen voor deze agent.";
+        list.append(li);
+      }
+      for (const record of records.slice(-8).reverse()) {
+        const li = document.createElement("li");
+        li.textContent = `Tick ${record.tick} · ${record.status} · ${record.motivation ?? record.error ?? "Beslissing wordt voorbereid"}${record.action ? " · " + JSON.stringify(record.action) : ""}${record.outcome ? " · resultaat " + record.outcome.status + (record.outcome.error ? " / " + record.outcome.error : "") : ""}`;
+        list.append(li);
+      }
     }),
 );
 if (import.meta.hot)

@@ -41,6 +41,11 @@ export class WorldEngine {
   private readonly motions = new Map<string, ActiveMotion>();
   private readonly waits = new Map<string, number>();
   private readonly events: WorldEvent[] = [];
+  private readonly lastActions = new Map<string, string>();
+  private readonly messages = new Map<
+    string,
+    { from: string; text: string; tick: number }[]
+  >();
   private readonly observedEvents = new Map<string, WorldEvent[]>();
   readonly navigation: NavigationSystem;
   constructor(definition: WorldDefinition, spawns?: AgentSpawn[]) {
@@ -57,13 +62,11 @@ export class WorldEngine {
     );
     const initial: AgentSpawn[] =
       spawns ??
-      definition.spawnPoints
-        .slice(0, 3)
-        .map((position, i) => ({
-          id: ["alpha", "beta", "gamma"][i]!,
-          name: ["Alpha", "Beta", "Gamma"][i]!,
-          position,
-        }));
+      definition.spawnPoints.slice(0, 3).map((position, i) => ({
+        id: ["alpha", "beta", "gamma"][i]!,
+        name: ["Alpha", "Beta", "Gamma"][i]!,
+        position,
+      }));
     if (!initial.length) throw new Error("World needs a spawn point");
     for (const spawn of initial) {
       if (
@@ -95,11 +98,18 @@ export class WorldEngine {
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
     );
   }
+  setController(agentId: string, controller: "scripted" | "codex") {
+    const agent = this.agents.get(agentId);
+    if (agent) agent.controller = controller;
+  }
   getTick(): number {
     return this.tick;
   }
   getDefinition(): WorldDefinition {
     return structuredClone(this.definition);
+  }
+  getAgents(): AgentState[] {
+    return structuredClone(this.orderedAgents());
   }
   getIdleAgents(): AgentState[] {
     return structuredClone(
@@ -124,6 +134,7 @@ export class WorldEngine {
       submittedAtTick: this.tick,
     };
     this.actions.set(action.id, action);
+    this.lastActions.set(agentId, action.id);
     agent.activeActionId = action.id;
     agent.status = "queued";
     this.trimActions();
@@ -221,13 +232,19 @@ export class WorldEngine {
   observe(agentId: string): AgentObservation | null {
     const agent = this.agents.get(agentId);
     if (!agent) return null;
-    return observe(
+    const observation = observe(
       agent,
       this.orderedAgents(),
       this.entityList(),
       this.tick,
       this.observedEvents.get(agentId)!,
     );
+    const last = this.lastActions.get(agentId);
+    if (last) observation.lastAction = this.getAction(last);
+    observation.messages = structuredClone(
+      (this.messages.get(agentId) ?? []).slice(-20),
+    );
+    return observation;
   }
   private start(action: ActionRecord) {
     action.status = "running";
@@ -249,6 +266,21 @@ export class WorldEngine {
     if (input.type === "wait") {
       this.waits.set(action.id, Math.ceil(input.durationMs / TICK_MS));
       agent.status = "waiting";
+      return;
+    }
+    if (input.type === "communicate") {
+      const recipient = this.agents.get(input.recipientId);
+      if (
+        !recipient ||
+        recipient.id === agent.id ||
+        !canSee(agent, recipient.position, this.entityList())
+      )
+        return this.fail(action, "RECIPIENT_NOT_VISIBLE");
+      const messages = this.messages.get(recipient.id) ?? [];
+      messages.push({ from: agent.id, text: input.message, tick: this.tick });
+      if (messages.length > 50) messages.shift();
+      this.messages.set(recipient.id, messages);
+      this.finish(action, "succeeded", undefined, { delivered: true });
       return;
     }
     const entity = this.entities.get(input.entityId);

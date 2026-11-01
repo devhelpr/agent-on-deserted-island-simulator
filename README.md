@@ -1,6 +1,6 @@
 # Agent Island
 
-Local-first simulatieplatform in TypeScript. Mijlpaal 2 levert een deterministisch 3D-eiland met drie scripted agents, een instelbare simulatieklok, navigatie en gedeelde objectinteracties. Hono en de World Engine beheren de wereld; Socket.IO stuurt de toestand naar de Vite/Three.js-viewer. Codex-integratie volgt in mijlpaal 3.
+Local-first simulatieplatform in TypeScript. Mijlpaal 3 voegt echte Codex-agents en een agentgebonden MCP-runtime toe. De wereldbasis levert een deterministisch 3D-eiland met drie scripted agents, een instelbare simulatieklok, navigatie en gedeelde objectinteracties. Hono en de World Engine beheren de wereld; Socket.IO stuurt de toestand naar de Vite/Three.js-viewer. Codex is optioneel; de standaardrun blijft scripted.
 
 ## Lokaal starten
 
@@ -19,6 +19,12 @@ Open **http://127.0.0.1:5173**. De backend luistert op **http://127.0.0.1:3001**
 - Bekijk de waarneming van de geselecteerde agent of annuleer diens actie. Een scripted agent kiest bij de volgende tick opnieuw een actie.
 - De tijdlijn toont recente resultaten en fouten; inventarissen en gedragen objecten volgen de servertoestand.
 
+## Echte Codex-agent starten
+
+Zorg dat de Codex CLI beschikbaar is en `codex login` is afgerond. Kies **Codex Alpha + 2 scripted** bij **Nieuwe run met** in het dashboard. Iedere Codex-agent krijgt een eigen thread, gefilterde waarnemingen en wereldacties via een beperkte MCP-sessie. De modelstatus en publieke beslissingen zijn zichtbaar in het dashboard.
+
+De echte acceptatieproef draaide 15 minuten simulatietijd met 13 modelbesluiten en 10 geslaagde verplaatsingen. Details en een herhaalbaar testcommando staan in de [Codex-runtimehandleiding](docs/codex-runtime.md) en het [acceptatieverslag van mijlpaal 3](docs/sprint-3-acceptance.md).
+
 ## Controleren en bouwen
 
 ```sh
@@ -34,7 +40,8 @@ npm run build
 - `apps/client`: dashboard, Three.js-rendering, interpolatie en camera.
 - `apps/server/src/world`: wereldgenerator, autoritatieve engine, navmesh/A* en perceptie.
 - `apps/server/src/simulation`: vaste virtuele klok en afzonderlijke simulatieruns.
-- `apps/server/src/agents`: event-driven beslisscheduler en scripted policy.
+- `apps/server/src/agents`: annuleerbare scheduler, scripted policy, CodexAdapter en beslisjournal.
+- `packages/world-mcp`: gevalideerde wereldtools via MCP InMemoryTransport.
 - `packages/shared`: getypeerde contracten, Zod-schema's en heightmap-sampling.
 - [TODO.md](TODO.md): zes mijlpalen, taken en acceptatiecriteria.
 - [Ontwerp v1.0](docs/architecture-v1.md), [acceptatie mijlpaal 1](docs/sprint-1-acceptance.md) en [acceptatie mijlpaal 2](docs/sprint-2-acceptance.md).
@@ -45,7 +52,7 @@ Iedere tick is 50 ms virtuele tijd. De server verwerkt beweging op 3 m/s, acties
 
 De klok verwerkt maximaal 100 ticks per pump en bewaart maximaal 5 seconden virtuele achterstand. Extra achterstand wordt overgeslagen en als `droppedSimulationTimeMs` zichtbaar gemaakt. Virtuele ticks zelf worden nooit overgeslagen: de wereld vertraagt bij overbelasting. Het dashboard toont resterende achterstand en niet verwerkte virtuele tijd.
 
-In **Live** blijft de wereld draaien terwijl agents beslissen. In **Experiment** wacht een tick totdat alle op dat beslismoment benodigde besluiten klaarstaan. Ze worden vervolgens in agent-ID-volgorde aangeboden. Wachttijd bij een beslisbarrière wordt niet later ingehaald. Er loopt maximaal één besluit per agent. Een mislukt of langer dan 10 echte seconden hangend besluit valt terug op een korte virtuele wachtactie. Stoppen of wisselen van besluitmodus maakt oude, nog binnenkomende resultaten ongeldig.
+In **Live** blijft de wereld draaien terwijl agents beslissen. In **Experiment** wacht een tick totdat alle op dat beslismoment benodigde besluiten klaarstaan. Ze worden vervolgens in agent-ID-volgorde aangeboden. Wachttijd bij een beslisbarrière wordt niet later ingehaald. Er loopt maximaal één besluit per agent. Een mislukt of langer dan de ingestelde deadline hangend besluit (scripted 10 s, Codex-adapter 60 s) valt terug op een korte virtuele wachtactie. Stoppen of wisselen van besluitmodus maakt oude, nog binnenkomende resultaten ongeldig.
 
 ## Wereld, navigatie en interacties
 
@@ -61,7 +68,7 @@ Perceptie gebruikt 25 m horizontaal bereik, een zichtveld van 120° en 2D-occlus
 
 ## API
 
-De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, maximaal 8 runs per proces. Een serverherstart begint opnieuw. Opslag, automatische cyclusresets, externe agentthreads en replay volgen in latere mijlpalen.
+De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, maximaal 8 runs per proces. Een serverherstart begint opnieuw. Opslag, automatische cyclusresets, blijvend agentgeheugen en replay volgen in latere mijlpalen.
 
 | Methode | Endpoint | Functie |
 | --- | --- | --- |
@@ -80,7 +87,7 @@ De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, m
 | GET | `/api/simulations/:id/actions/:actionId` | Actieresultaat |
 | POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Open actie annuleren |
 
-Een nieuwe run accepteert optioneel `worldId: "island-48291"`, `timeScale` en `schedulerMode`. Een geaccepteerde actie retourneert HTTP 202 met `{ accepted: true, actionId }`; ongeldige input geeft 400, onbekende resources 404 en conflicten 409. De action-ID geeft toegang tot de uiteindelijke uitkomst. Dit is een lokale onderzoeks-API; modelgebonden toolidentiteit wordt in mijlpaal 3 toegevoegd.
+Een nieuwe run accepteert optioneel `worldId: "island-48291"`, `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"` en `codexAgentIds` (standaard `["alpha"]`). Een geaccepteerde actie retourneert HTTP 202 met `{ accepted: true, actionId }`; ongeldige input geeft 400, onbekende resources 404 en conflicten 409. De action-ID geeft toegang tot de uiteindelijke uitkomst. Dit is een lokale onderzoeks-API voor de menselijke operator; modelagents krijgen alleen de interne identiteitgebonden MCP-sessie. Modelbeslissingen zijn leesbaar via `GET /api/simulations/:id/agents/:agentId/decisions`.
 
 Socket.IO verstuurt `world:snapshot` bij (her)verbinden en abonneren. `simulation:subscribe(id, ack)` wisselt de room. `world:delta` bevat `{ simulationId, state }` en `simulation:state` bevat klokstatus. Beide worden maximaal 10 keer per echte seconde verstuurd, onafhankelijk van versnelling. Bedieningswijzigingen leveren ook direct een statusevent op. De viewer interpoleert tussen posities. In deze versie bevat een delta de complete actuele entiteitenlijst en begrensde recente acties/events; opslag en verdere deltacompressie volgen later.
 
