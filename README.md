@@ -1,6 +1,6 @@
 # Agent Island
 
-Local-first simulatieplatform in TypeScript. De eerste sprint levert een deterministisch 3D-eiland en één scripted verkenner op. Hono beheert de wereld, Socket.IO levert de toestand aan de Vite/Three.js-viewer. Codex-integratie volgt in sprint 3.
+Local-first simulatieplatform in TypeScript. Mijlpaal 2 levert een deterministisch 3D-eiland met drie scripted agents, een instelbare simulatieklok, navigatie en gedeelde objectinteracties. Hono en de World Engine beheren de wereld; Socket.IO stuurt de toestand naar de Vite/Three.js-viewer. Codex-integratie volgt in mijlpaal 3.
 
 ## Lokaal starten
 
@@ -13,10 +13,11 @@ npm run dev
 
 Open **http://127.0.0.1:5173**. De backend luistert op **http://127.0.0.1:3001**. Stop beide processen met Ctrl+C. Er zijn geen API-sleutels of externe diensten nodig.
 
-- Sleep om de camera te draaien; scroll om te zoomen.
-- Klik op Alpha om de agent van dichtbij te bekijken, of op Overzicht om de camera terug te zetten.
-- De server stuurt bij (her)verbinden de werelddefinitie; daarna volgt agenttoestand op 10 Hz. De viewer interpoleert posities.
-- Alpha beweegt met 3 m/s op een vrije vierkante route midden op het eiland.
+- Sleep om de camera te draaien; scroll om te zoomen. Klik op Alpha, Beta of Gamma om de camera op die agent te richten.
+- Pauzeer/hervat de klok, kies 1×/2×/5×/10×/20× en wissel tussen Live en Experiment.
+- Stoppen is definitief voor een run; Nieuwe run maakt een onafhankelijk experiment. De runkeuze schakelt de liveverbinding naar de juiste Socket.IO-room.
+- Bekijk de waarneming van de geselecteerde agent of annuleer diens actie. Een scripted agent kiest bij de volgende tick opnieuw een actie.
+- De tijdlijn toont recente resultaten en fouten; inventarissen en gedragen objecten volgen de servertoestand.
 
 ## Controleren en bouwen
 
@@ -26,22 +27,63 @@ npm test
 npm run build
 ```
 
-De clientbuild staat in `apps/client/dist`. De serverbuild bevat de gedeelde contracten en start met `npm start -w @agent-island/server`. `npm run preview -w @agent-island/client` toont de clientbuild; deze preview gebruikt dezelfde lokale backendproxy als development. Dit is een lokale ontwikkelopzet, geen hostingconfiguratie.
+`npm run format` formatteert TypeScript, CSS, HTML en configuratie. De clientbuild staat in `apps/client/dist`. De serverbuild bevat de gedeelde contracten en start met `npm start -w @agent-island/server`. `npm run preview -w @agent-island/client` toont de clientbuild met dezelfde lokale backendproxy. Dit is een lokale ontwikkelopzet, geen hostingconfiguratie.
 
 ## Structuur
 
-- `apps/client`: dashboard, Three.js-rendering en camera.
-- `apps/server`: Hono-API, Socket.IO-transport, World Engine en wereldgenerator.
-- `packages/shared`: getypeerde contracten en heightmap-sampling.
-- [TODO.md](TODO.md): zes sprints, taken en acceptatiecriteria.
-- [docs/architecture-v1.md](docs/architecture-v1.md): aangeleverde ontwerptekst, zonder de meegekopieerde Mermaid-CSS.
+- `apps/client`: dashboard, Three.js-rendering, interpolatie en camera.
+- `apps/server/src/world`: wereldgenerator, autoritatieve engine, navmesh/A* en perceptie.
+- `apps/server/src/simulation`: vaste virtuele klok en afzonderlijke simulatieruns.
+- `apps/server/src/agents`: event-driven beslisscheduler en scripted policy.
+- `packages/shared`: getypeerde contracten, Zod-schema's en heightmap-sampling.
+- [TODO.md](TODO.md): zes mijlpalen, taken en acceptatiecriteria.
+- [Ontwerp v1.0](docs/architecture-v1.md), [acceptatie mijlpaal 1](docs/sprint-1-acceptance.md) en [acceptatie mijlpaal 2](docs/sprint-2-acceptance.md).
 
-## Wereld en autoriteit
+## Klok en beslissingen
 
-Generator v1 gebruikt seed `48291`, een 500 × 500 m heightmap met 81 × 81 samples, 120 bomen, 80 rotsen, 12 artefacten en één grot. Dezelfde configuratie levert dezelfde definitie op. Een runtime krijgt een onafhankelijke kopie; snapshots kunnen de serverwereld niet muteren. Er bestaat geen browser-API om posities te schrijven.
+Iedere tick is 50 ms virtuele tijd. De server verwerkt beweging op 3 m/s, acties en wachttijden uitsluitend in deze tijd. Wall time wordt afzonderlijk gemeten. Pauzetijd levert geen inhaalwerk op; een snelheidswijziging geldt vanaf het wijzigingsmoment.
 
-`GET /api/health` geeft de serverstatus. `GET /api/world` geeft `{ definition, state }`. Socket.IO verstuurt `world:snapshot` bij elke verbinding en `world:delta` met de actuele dynamische toestand. Statische objecten worden alleen met de snapshot verstuurd. De backend bindt aan loopback.
+De klok verwerkt maximaal 100 ticks per pump en bewaart maximaal 5 seconden virtuele achterstand. Extra achterstand wordt overgeslagen en als `droppedSimulationTimeMs` zichtbaar gemaakt. Virtuele ticks zelf worden nooit overgeslagen: de wereld vertraagt bij overbelasting. Het dashboard toont resterende achterstand en niet verwerkte virtuele tijd.
 
-Sprint 1 bevat een minimale realtime-runner met vaste 50 ms-stappen. Sprint 2 voegt de volledige klok, navigatie, botsingen, acties, perceptie en snelheid toe. Opslag, automatische resets, echte Codex-agents en replay zijn nog niet geïmplementeerd. De vrije centrale testroute houdt afstand tot gegenereerde objecten.
+In **Live** blijft de wereld draaien terwijl agents beslissen. In **Experiment** wacht een tick totdat alle op dat beslismoment benodigde besluiten klaarstaan. Ze worden vervolgens in agent-ID-volgorde aangeboden. Wachttijd bij een beslisbarrière wordt niet later ingehaald. Er loopt maximaal één besluit per agent. Een mislukt of langer dan 10 echte seconden hangend besluit valt terug op een korte virtuele wachtactie. Stoppen of wisselen van besluitmodus maakt oude, nog binnenkomende resultaten ongeldig.
 
-Technische referenties: [Hono Node-adapter](https://hono.dev/docs/getting-started/nodejs), [Socket.IO serverinitialisatie](https://socket.io/docs/v4/server-initialization), [Vite](https://vite.dev/guide/).
+## Wereld, navigatie en interacties
+
+Generator v2 behoudt seed `48291`, een 500 × 500 m heightmap met 81 × 81 samples, 120 bomen, 80 rotsen, 12 artefacten en één grot. Versie 2 voegt drie vrije spawnpunten toe. Dezelfde versie en configuratie leveren dezelfde definitie op. Runtime en uitgaande snapshots zijn onafhankelijke kopieën.
+
+De navigatie gebruikt een uit het terrein afgeleid driehoekig navmesh. A* zoekt over de driehoekcentra; randen en vereenvoudigde padsegmenten worden gecontroleerd op water, te steile hellingen en objecten met agentvrijruimte. Ook iedere bewegingsstap controleert actuele objecten en andere agents. Na oppakken of neerleggen wordt de obstakelindex ongeldig gemaakt. Een route die 5 virtuele seconden geblokkeerd blijft eindigt met `PATH_BLOCKED`; de scripted policy kiest daarna opnieuw. Dit is eenvoudige kinematische botsingsdetectie, zonder rigid-body physics of coöperatieve padplanning.
+
+Alle acties krijgen een ID en de status `queued → running → succeeded/failed/cancelled`. Per agent kan één actie openstaan. Aan het begin van een tick beslist agent-ID-volgorde bij conflicten, ongeacht de aankomstvolgorde van verzoeken. Afstand, beschikbaarheid, zicht en eigendom worden bij uitvoering opnieuw gecontroleerd.
+
+Ondersteund: `move`, `look`, `wait`, `inspect`, `interact` (artefact activeren), `pickup` (verplaatsbare steen) en `drop`. Een agent draagt maximaal één object. Neerleggen mag geen ander object of agent overlappen. Doelhoogte wordt altijd door de server uit het terrein bepaald.
+
+Perceptie gebruikt 25 m horizontaal bereik, een zichtveld van 120° en 2D-occlusie door bomen, rotsen en de grot. Interactieafstand is 3 m vanaf de objectgrens. De eigen inventaris blijft bekend. Gebeurtenissen krijgen hun publiek op het moment waarop ze plaatsvinden; latere waarnemingen geven geen toegang tot de globale historie. De menselijke viewer ziet de hele wereld, agentwaarnemingen blijven beperkt. Terreinheuvels blokkeren het zicht in deze versie nog niet.
+
+## API
+
+De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, maximaal 8 runs per proces. Een serverherstart begint opnieuw. Opslag, automatische cyclusresets, externe agentthreads en replay volgen in latere mijlpalen.
+
+| Methode | Endpoint | Functie |
+| --- | --- | --- |
+| GET | `/api/health` | Serverstatus |
+| GET | `/api/world` | Snapshot standaardrun; compatibel alias |
+| GET | `/api/worlds` | Beschikbare wereld |
+| GET / POST | `/api/simulations` | Runs opvragen / nieuwe run |
+| GET | `/api/simulations/:id` | Klok en status |
+| GET | `/api/simulations/:id/world` | Werelddefinitie, runtime en status |
+| GET | `/api/simulations/:id/agents` | Agents |
+| POST | `/api/simulations/:id/pause`, `/resume`, `/stop` | Run bedienen |
+| PATCH | `/api/simulations/:id/speed` | `{ "timeScale": 1/2/5/10/20 }` |
+| PATCH | `/api/simulations/:id/mode` | `{ "schedulerMode": "live"/"experiment" }` |
+| GET | `/api/simulations/:id/agents/:agentId/observation` | Beperkte actuele waarneming |
+| POST | `/api/simulations/:id/agents/:agentId/actions` | Zod-gevalideerde actie indienen |
+| GET | `/api/simulations/:id/actions/:actionId` | Actieresultaat |
+| POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Open actie annuleren |
+
+Een nieuwe run accepteert optioneel `worldId: "island-48291"`, `timeScale` en `schedulerMode`. Een geaccepteerde actie retourneert HTTP 202 met `{ accepted: true, actionId }`; ongeldige input geeft 400, onbekende resources 404 en conflicten 409. De action-ID geeft toegang tot de uiteindelijke uitkomst. Dit is een lokale onderzoeks-API; modelgebonden toolidentiteit wordt in mijlpaal 3 toegevoegd.
+
+Socket.IO verstuurt `world:snapshot` bij (her)verbinden en abonneren. `simulation:subscribe(id, ack)` wisselt de room. `world:delta` bevat `{ simulationId, state }` en `simulation:state` bevat klokstatus. Beide worden maximaal 10 keer per echte seconde verstuurd, onafhankelijk van versnelling. Bedieningswijzigingen leveren ook direct een statusevent op. De viewer interpoleert tussen posities. In deze versie bevat een delta de complete actuele entiteitenlijst en begrensde recente acties/events; opslag en verdere deltacompressie volgen later.
+
+De engine bewaart maximaal 512 actierecords (open acties blijven behouden), 200 recente globale events en 100 waargenomen events per agent. De netwerktoestand bevat maximaal 60 recente acties en 40 recente events. Dit is geen duurzame replaylog.
+
+Technische referenties: [Hono Node-adapter](https://hono.dev/docs/getting-started/nodejs), [Socket.IO rooms](https://socket.io/docs/v4/rooms/), [Zod](https://zod.dev/basics), [Vite](https://vite.dev/guide/).

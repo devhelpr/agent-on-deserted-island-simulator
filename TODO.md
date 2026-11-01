@@ -22,16 +22,16 @@ Scope: de minimale realtime-runner gebruikt stappen van 50 ms. Alpha volgt een v
 
 ## Fase 2 / Sprint 2 — Simulation Clock + acties
 
-- [ ] S2.1 SimulationClock met wall time, virtuele tijd, accumulator, pauzeren/hervatten en 1×–20×; gedrag bij achterstand expliciet maken.
-- [ ] S2.2 Live- en experimentmodus: beslisbarrières en vaste verwerkingsvolgorde.
-- [ ] S2.3 Navmesh + A*, botsingen en onbereikbare doelen afhandelen.
-- [ ] S2.4 Centrale actiewachtrij; action-ID, statusmodel, annulering en tie-breaking op agent-ID.
-- [ ] S2.5 Perceptie: 25 m, 120°, occlusie, interactieafstand en zichtbare gebeurtenissen.
-- [ ] S2.6 Atomisch inspecteren, interacteren, oppakken en neerleggen; bezit en bereik valideren met Zod.
-- [ ] S2.7 Drie scripted agents en conflicttests voor hetzelfde object.
-- [ ] S2.8 Simulatiebeheer-API, rooms, bounded netwerkupdates en bediening in dashboard.
+- [x] S2.1 SimulationClock met wall time, virtuele tijd, accumulator, pauzeren/hervatten en 1×–20×; gedrag bij achterstand expliciet maken.
+- [x] S2.2 Live- en experimentmodus: beslisbarrières en vaste verwerkingsvolgorde.
+- [x] S2.3 Navmesh + A*, botsingen en onbereikbare doelen afhandelen.
+- [x] S2.4 Centrale actiewachtrij; action-ID, statusmodel, annulering en tie-breaking op agent-ID.
+- [x] S2.5 Perceptie: 25 m, 120°, occlusie, interactieafstand en zichtbare gebeurtenissen.
+- [x] S2.6 Atomisch inspecteren, interacteren, oppakken en neerleggen; bezit en bereik valideren met Zod.
+- [x] S2.7 Drie scripted agents en conflicttests voor hetzelfde object.
+- [x] S2.8 Simulatiebeheer-API, rooms, bounded netwerkupdates en bediening in dashboard.
 
-Acceptatie: drie scripted agents bewegen en reageren tegelijk zonder tegenstrijdige wereldtoestand.
+Acceptatie gehaald: drie scripted agents bewegen en reageren tegelijk zonder tegenstrijdige wereldtoestand. Zie [acceptatieverslag mijlpaal 2](docs/sprint-2-acceptance.md).
 
 ## Fase 3 / Sprint 3 — Codex-integratie
 
