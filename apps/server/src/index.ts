@@ -2,7 +2,9 @@ import { startServer } from "./createApp.js";
 const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535)
   throw new Error("Invalid PORT");
-const runtime = startServer(port);
+const runtime = startServer(port, {
+  databasePath: process.env.AGENT_ISLAND_DB ?? "data/agent-island.sqlite",
+});
 runtime.server.on("listening", () =>
   console.log(`Agent Island server: http://127.0.0.1:${port}`),
 );

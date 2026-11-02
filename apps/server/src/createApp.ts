@@ -9,12 +9,18 @@ import {
   type ServerEvents,
 } from "../../../packages/shared/src/index.js";
 import type { DecisionPolicy } from "./agents/AgentScheduler.js";
+import { SimulationStore, type Checkpoint } from "./storage/SimulationStore.js";
 import { Simulation } from "./simulation/Simulation.js";
 
 export function createApp(
-  options: { now?: () => number; policy?: DecisionPolicy | null } = {},
+  options: {
+    now?: () => number;
+    policy?: DecisionPolicy | null;
+    databasePath?: string;
+  } = {},
 ) {
   const now = options.now ?? (() => performance.now());
+  const store = new SimulationStore(options.databasePath);
   const simulations = new Map<string, Simulation>();
   let nextId = 1;
   const makeSimulation = (
@@ -29,12 +35,34 @@ export function createApp(
       timeScale,
       mode,
       options.policy,
-      { controller, codexAgentIds },
+      { controller, codexAgentIds, store },
     );
     simulations.set(simulation.id, simulation);
     return simulation;
   };
-  const initial = makeSimulation();
+  for (const { run, cycle, definition } of store.recoverableRuns()) {
+    const simulation = new Simulation(
+      run.id,
+      now(),
+      run.timeScale,
+      run.mode as "live" | "experiment",
+      options.policy,
+      {
+        ...run.configuration,
+        store,
+        definition,
+        restore: {
+          checkpoint: JSON.parse(cycle.checkpoint) as Checkpoint,
+          cycleIndex: cycle.index,
+          cycleStatus: cycle.status,
+          status: run.status,
+        },
+      },
+    );
+    simulations.set(run.id, simulation);
+    nextId = Math.max(nextId, Number(run.id.slice(4)) + 1);
+  }
+  const initial = simulations.get("sim-001") ?? makeSimulation();
   let onChange = (simulation: Simulation) => {};
   const app = new Hono();
   app.use("/api/*", async (c, next) => {
@@ -73,7 +101,7 @@ export function createApp(
         {
           error: "SIMULATION_LIMIT",
           message:
-            "Maximaal 8 runs per serverproces; herstart om deze te wissen.",
+            "Maximaal 8 opgeslagen runs; kies een andere database voor een nieuw experiment.",
         },
         409,
       );
@@ -106,16 +134,57 @@ export function createApp(
     const simulation = simulations.get(c.req.param("id"))!;
     if (!simulation.engine.observe(c.req.param("agentId")))
       return c.json({ error: "AGENT_NOT_FOUND" }, 404);
-    const decisions =
-      simulation.codex?.journal.list(c.req.param("agentId")) ?? [];
+    const decisions = store.listDecisions(
+      simulation.id,
+      c.req.param("agentId"),
+    );
     return c.json(
       decisions.map((record) => ({
         ...record,
-        outcome: record.actionId
-          ? simulation.engine.getAction(record.actionId)
-          : undefined,
+        outcome:
+          record.outcome ??
+          (record.cycleId === simulation.cycleId && record.actionId
+            ? simulation.engine.getAction(record.actionId)
+            : undefined),
       })),
     );
+  });
+  app.get("/api/simulations/:id/agents/:agentId/memories", (c) => {
+    const simulation = simulations.get(c.req.param("id"))!;
+    const agentId = c.req.param("agentId");
+    if (!simulation.engine.observe(agentId))
+      return c.json({ error: "AGENT_NOT_FOUND" }, 404);
+    return c.json(
+      simulation.memory!.list(agentId, (c.req.query("q") ?? "").slice(0, 500)),
+    );
+  });
+  app.get("/api/simulations/:id/agents/:agentId/memory-context", (c) => {
+    const simulation = simulations.get(c.req.param("id"))!;
+    const observation = simulation.engine.observe(c.req.param("agentId"));
+    return observation
+      ? c.json(
+          simulation.memory!.context(
+            observation.agentId,
+            simulation.cycleId,
+            observation,
+          ),
+        )
+      : c.json({ error: "AGENT_NOT_FOUND" }, 404);
+  });
+  app.post("/api/simulations/:id/reset", async (c) => {
+    const simulation = simulations.get(c.req.param("id"))!;
+    if (simulation.status().status === "stopped")
+      return c.json({ error: "SIMULATION_STOPPED" }, 409);
+    try {
+      await simulation.reset();
+    } catch {
+      return c.json(
+        { error: "RESET_FAILED", detail: simulation.cycleError },
+        500,
+      );
+    }
+    onChange(simulation);
+    return c.json(simulation.snapshot());
   });
   app.get("/api/simulations/:id/agents/:agentId/observation", (c) => {
     const observation = simulations
@@ -132,7 +201,12 @@ export function createApp(
       if (simulation.status().status === "stopped" && operation !== "stop")
         return c.json({ error: "SIMULATION_STOPPED" }, 409);
       if (operation === "stop") await simulation.stop();
-      else simulation.clock[operation]();
+      else {
+        if (operation === "resume" && simulation.cycleStatus === "closing")
+          await simulation.reset();
+        simulation.clock[operation]();
+        simulation.persist();
+      }
       onChange(simulation);
       return c.json(simulation.status());
     });
@@ -144,6 +218,7 @@ export function createApp(
     if (simulation.status().status === "stopped")
       return c.json({ error: "SIMULATION_STOPPED" }, 409);
     simulation.clock.setSpeed(parsed.data.timeScale);
+    simulation.persist();
     onChange(simulation);
     return c.json(simulation.status());
   });
@@ -158,12 +233,15 @@ export function createApp(
       return c.json({ error: "SIMULATION_STOPPED" }, 409);
     simulation.scheduler?.cancel();
     simulation.clock.setSchedulerMode(parsed.data.schedulerMode);
+    simulation.persist();
     onChange(simulation);
     return c.json(simulation.status());
   });
   app.post("/api/simulations/:id/agents/:agentId/actions", async (c) => {
     const input = await c.req.json().catch(() => null);
     const simulation = simulations.get(c.req.param("id"))!;
+    if (simulation.cycleStatus === "closing")
+      return c.json({ accepted: false, error: "CYCLE_CLOSING" }, 409);
     if (simulation.status().status !== "running")
       return c.json({ error: "SIMULATION_NOT_RUNNING" }, 409);
     const result = simulation.engine.submitAction(
@@ -200,7 +278,10 @@ export function createApp(
   );
   return {
     app,
-    engine: initial.engine,
+    get engine() {
+      return initial.engine;
+    },
+    store,
     simulations,
     advance: (time = now()) => {
       for (const s of simulations.values()) s.advance(time);
@@ -210,6 +291,13 @@ export function createApp(
     },
     stop: async () => {
       await Promise.all([...simulations.values()].map((s) => s.stop()));
+    },
+    shutdown: async () => {
+      // Preserve run lifecycle on clean server shutdown; pending model turns are cancelled.
+      for (const s of simulations.values()) {
+        await s.shutdown();
+      }
+      store.close();
     },
   };
 }
@@ -257,8 +345,16 @@ export function startServer(
   const close = async () => {
     clearInterval(simulation);
     clearInterval(network);
-    await runtime.stop();
+    await runtime.shutdown();
     await new Promise<void>((resolve) => io.close(() => resolve()));
   };
-  return { ...runtime, server, io, close };
+  return {
+    ...runtime,
+    get engine() {
+      return runtime.engine;
+    },
+    server,
+    io,
+    close,
+  };
 }

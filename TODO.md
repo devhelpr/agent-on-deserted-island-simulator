@@ -47,17 +47,17 @@ Acceptatie gehaald: één echte Codex-agent verkende 15 minuten simulatietijd, m
 
 ## Fase 4 / Sprint 4 — Geheugen + reset
 
-- [ ] S4.1 SQLite + Drizzle-migraties voor werelden, runs, cycli, agents, sessies, herinneringen, revisies, events, snapshots, beslissingen en toolcalls.
-- [ ] S4.2 Per-agent episodisch, semantisch en procedureel geheugen met FTS, confidence, importance en bron-events.
-- [ ] S4.3 Observed/inferred/reported onderscheiden; duplicaten en tegenspraak beheren.
-- [ ] S4.4 Context samenstellen uit samenvatting, relevante herinneringen, recente ervaringen en doelen.
-- [ ] S4.5 Herhaalbare consolidatie met unieke sleutel cycleId + agentId.
-- [ ] S4.6 Cyclus op 72.000 ticks afsluiten: nieuwe acties weigeren, lopende acties/turns annuleren, eindsnapshot opslaan.
-- [ ] S4.7 Beginwereld herstellen, geheugen behouden en nieuwe threads starten met geheugenoverzicht.
-- [ ] S4.8 Crashherstel en transactionele koppeling tussen geaccepteerde acties, mutaties en events testen.
-- [ ] S4.9 Memory-tab en geheugen-/beslissingsendpoints bouwen; isolatie tussen agents testen.
+- [x] S4.1 SQLite + Drizzle-migraties voor werelden, runs, cycli, agents, sessies, herinneringen, revisies, events, snapshots, beslissingen en toolcalls.
+- [x] S4.2 Per-agent episodisch, semantisch en procedureel geheugen met FTS, confidence, importance en bron-events.
+- [x] S4.3 Observed/inferred/reported onderscheiden; duplicaten en tegenspraak beheren.
+- [x] S4.4 Context samenstellen uit samenvatting, relevante herinneringen, recente ervaringen en doelen.
+- [x] S4.5 Herhaalbare consolidatie met unieke sleutel cycleId + agentId.
+- [x] S4.6 Cyclus op 72.000 ticks afsluiten: nieuwe acties weigeren, lopende acties/turns annuleren, eindsnapshot opslaan.
+- [x] S4.7 Beginwereld herstellen, geheugen behouden en nieuwe threads starten met geheugenoverzicht.
+- [x] S4.8 Crashherstel en transactionele koppeling tussen geaccepteerde acties, mutaties en events testen.
+- [x] S4.9 Memory-tab en geheugen-/beslissingsendpoints bouwen; isolatie tussen agents testen.
 
-Acceptatie: een agent vindt een grot en navigeert er na reset met opgeslagen geheugen opnieuw naartoe.
+Acceptatie gehaald met een deterministische, perceptiegebaseerde integratietest: een agent vindt een grot en navigeert er na reset met opgeslagen geheugen opnieuw naartoe. Zie [acceptatieverslag mijlpaal 4](docs/sprint-4-acceptance.md).
 
 ## Fase 5 / Sprint 5 — Replay Engine
 

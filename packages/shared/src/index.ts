@@ -1,5 +1,6 @@
 import { z } from "zod";
 export const TICK_MS = 50;
+export const CYCLE_TICKS = 72_000;
 export const AGENT_RADIUS = 1.1;
 export const INTERACTION_RANGE = 3;
 export const vectorSchema = z.strictObject({
@@ -113,6 +114,7 @@ export interface AgentObservation {
   }[];
   visibleAgents: { id: string; position: Vector3; distance: number }[];
   recentEvents: WorldEvent[];
+  memory?: MemoryContext;
 }
 export interface WorldStateDto {
   worldId: string;
@@ -170,12 +172,36 @@ export interface DecisionRecord {
   motivation?: string;
   publicMessage?: string;
   error?: string;
+  outcome?: ActionRecord;
   tools: {
     tool: string;
     arguments: unknown;
     result: unknown;
     success: boolean;
   }[];
+}
+export interface AgentMemory {
+  id: string;
+  agentId: string;
+  cycleId: string;
+  type: "episodic" | "semantic" | "procedural";
+  provenance: "observed" | "inferred" | "reported";
+  content: string;
+  confidence: number;
+  importance: number;
+  sourceEventIds: string[];
+  createdAtTick: number;
+  claimKey: string;
+  supersededBy?: string;
+  revision: number;
+  conflictsWith?: string[];
+  target?: Vector3;
+}
+export interface MemoryContext {
+  summary: string;
+  relevant: AgentMemory[];
+  recent: string[];
+  goals: string[];
 }
 export interface SimulationStatus {
   id: string;
@@ -191,6 +217,10 @@ export interface SimulationStatus {
   waitingForDecisions: boolean;
   pendingAgents: string[];
   agentSessions?: AgentSessionStatus[];
+  cycleId?: string;
+  cycleIndex?: number;
+  cycleStatus?: "active" | "closing";
+  cycleError?: string;
 }
 export interface WorldSnapshot {
   simulation: SimulationStatus;

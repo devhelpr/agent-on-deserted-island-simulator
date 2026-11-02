@@ -47,7 +47,68 @@ export class WorldEngine {
     { from: string; text: string; tick: number }[]
   >();
   private readonly observedEvents = new Map<string, WorldEvent[]>();
+  private commit?: () => void;
+  private mutating = false;
+  private accepting = true;
   readonly navigation: NavigationSystem;
+  setCommit(commit: () => void) {
+    this.commit = commit;
+  }
+  setAccepting(accepting: boolean) {
+    this.accepting = accepting;
+  }
+  checkpoint() {
+    return structuredClone({
+      tick: this.tick,
+      nextAction: this.nextAction,
+      nextEvent: this.nextEvent,
+      accepting: this.accepting,
+      agents: [...this.agents],
+      entities: [...this.entities],
+      actions: [...this.actions],
+      motions: [...this.motions],
+      waits: [...this.waits],
+      events: this.events,
+      lastActions: [...this.lastActions],
+      messages: [...this.messages],
+      observedEvents: [...this.observedEvents],
+    });
+  }
+  restore(checkpoint: ReturnType<WorldEngine["checkpoint"]>) {
+    const c = structuredClone(checkpoint);
+    this.tick = c.tick;
+    this.nextAction = c.nextAction;
+    this.nextEvent = c.nextEvent;
+    this.accepting = c.accepting;
+    const restoreMap = <K, V>(map: Map<K, V>, entries: [K, V][]) => {
+      map.clear();
+      for (const [key, value] of entries) map.set(key, value);
+    };
+    restoreMap(this.agents, c.agents);
+    restoreMap(this.entities, c.entities);
+    restoreMap(this.actions, c.actions);
+    restoreMap(this.motions, c.motions);
+    restoreMap(this.waits, c.waits);
+    restoreMap(this.lastActions, c.lastActions);
+    restoreMap(this.messages, c.messages);
+    restoreMap(this.observedEvents, c.observedEvents);
+    this.events.splice(0, this.events.length, ...c.events);
+    this.navigation.updateObstacles(this.entityList());
+  }
+  private mutate<T>(operation: () => T): T {
+    const before = this.checkpoint();
+    this.mutating = true;
+    try {
+      const result = operation();
+      this.commit!();
+      return result;
+    } catch (error) {
+      this.restore(before);
+      throw error;
+    } finally {
+      this.mutating = false;
+    }
+  }
   constructor(definition: WorldDefinition, spawns?: AgentSpawn[]) {
     this.definition = structuredClone(definition);
     for (const e of definition.entities)
@@ -121,6 +182,9 @@ export class WorldEngine {
     return a ? structuredClone(a) : undefined;
   }
   submitAction(agentId: string, input: unknown): ActionSubmission {
+    if (!this.accepting) return { accepted: false, error: "CYCLE_CLOSING" };
+    if (this.commit && !this.mutating)
+      return this.mutate(() => this.submitAction(agentId, input));
     const parsed = actionSchema.safeParse(input);
     if (!parsed.success) return { accepted: false, error: "INVALID_ACTION" };
     const agent = this.agents.get(agentId);
@@ -141,6 +205,8 @@ export class WorldEngine {
     return { accepted: true, actionId: action.id };
   }
   cancelAction(agentId: string, actionId: string): boolean {
+    if (this.commit && !this.mutating)
+      return this.mutate(() => this.cancelAction(agentId, actionId));
     const action = this.actions.get(actionId);
     if (
       !action ||
@@ -151,7 +217,9 @@ export class WorldEngine {
     this.finish(action, "cancelled", "CANCELLED");
     return true;
   }
-  cancelAll() {
+  cancelAll(): void {
+    if (this.commit && !this.mutating)
+      return this.mutate(() => this.cancelAll());
     for (const a of this.actions.values())
       if (a.status === "queued" || a.status === "running")
         this.finish(a, "cancelled", "SIMULATION_STOPPED");
@@ -348,6 +416,7 @@ export class WorldEngine {
     this.finish(action, "succeeded");
   }
   step(): void {
+    if (this.commit && !this.mutating) return this.mutate(() => this.step());
     this.tick++;
     // Agent ID, then action ID: request arrival order never decides ownership.
     const queued = [...this.actions.values()]

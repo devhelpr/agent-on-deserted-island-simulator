@@ -10,6 +10,7 @@ interface PolicyState {
   visited: Set<string>;
   lastTarget?: string;
   failures: number;
+  recalled?: boolean;
 }
 /** Deterministic policy using only the filtered observations exposed to inhabitants. */
 export function createScriptedPolicy(): DecisionPolicy {
@@ -23,6 +24,29 @@ export function createScriptedPolicy(): DecisionPolicy {
     };
     states.set(observation.agentId, state);
     state.turn++;
+    const cave = observation.memory?.relevant.find(
+      (m) => m.content.startsWith("cave ") && m.target,
+    );
+    if (cave?.target && !state.recalled) {
+      const previous = observation.lastAction;
+      if (
+        previous?.input.type === "move" &&
+        previous.status === "failed" &&
+        previous.input.target.x === cave.target.x &&
+        previous.input.target.z === cave.target.z
+      )
+        state.recalled = true;
+    }
+    if (cave?.target && !state.recalled) {
+      if (
+        Math.hypot(
+          observation.position.x - cave.target.x,
+          observation.position.z - cave.target.z,
+        ) > 2
+      )
+        return { type: "move", target: cave.target };
+      state.recalled = true;
+    }
     const offset =
       (["alpha", "beta", "gamma"].indexOf(observation.agentId) * 2 * Math.PI) /
       3;

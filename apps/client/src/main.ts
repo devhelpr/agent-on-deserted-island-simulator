@@ -1,5 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 import type {
+  AgentMemory,
+  MemoryContext,
   ClientEvents,
   ServerEvents,
   SimulationStatus,
@@ -9,17 +11,19 @@ import { IslandScene } from "./world/IslandScene";
 import "./style.css";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
-<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 03 <span>/</span> AUTONOME AGENTS</span></header>
+<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 04 <span>/</span> GEHEUGEN & CYCLI</span></header>
 <main><section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">EXPERIMENT · SEED <span id="seed">—</span></p><h1>Samen op onbekend terrein.</h1><p class="intro">Drie verkenners. Eén gedeeld eiland. Elke actie telt.</p></div><span class="local-badge">LOCAL FIRST ↗</span></div>
-<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option></select></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
+<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="reset-cycle" type="button" disabled>Cyclus resetten</button><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option></select></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
 <div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
 <div class="metrics"><div><span>WERELDTIJD</span><strong id="world-time">00:00</strong></div><div><span>SIMULATIETICK</span><strong id="tick">0</strong></div><div><span>EILAND</span><strong id="size">—</strong></div><div><span>OBJECTEN</span><strong id="entity-count">—</strong></div></div>
-<div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Kies een agent en bekijk diens beslissingen.</li></ol></div>
+<nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live & beslissingen</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
+<section id="memory-panel" hidden aria-label="Agentgeheugen"><div class="memory-heading"><h2 id="memory-agent">Geheugen · Alpha</h2><span id="memory-cycle"></span></div><form id="memory-search"><label>Doorzoek herinneringen<input id="memory-query" type="search" maxlength="500" placeholder="Bijvoorbeeld cave of rock" /></label><button type="submit">Zoeken</button><button id="memory-refresh" type="button">Vernieuwen</button></form><p id="memory-summary"></p><p id="memory-goals"></p><ol id="memory-list"></ol></section>
+<div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Kies een agent en bekijk diens beslissingen.</li></ol></div></div>
 </section><aside><div class="panel-heading"><p class="eyebrow">IN HET VELD</p><h2>De verkenners<span>03</span></h2></div><div id="agents"></div>
 <div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
 <div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents zoeken een pad, onderzoeken objecten en proberen stenen op te pakken. Eén object kan maar één eigenaar hebben.</p></div></div>
 <div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
-<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>Ervaringen onthouden.</h3><p>Sprint 04 voegt blijvend geheugen en terugkerende cycli toe.</p><span>04 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · Generator v2</span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
+<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>De wereld terugspoelen.</h3><p>Sprint 05 voegt replay, een tijdlijn en historische wereldtoestanden toe.</p><span>05 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · Generator v2</span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
 const el = (id: string) => document.getElementById(id)!;
 let scene: IslandScene | undefined;
 try {
@@ -59,6 +63,7 @@ function refreshControls() {
   const stopped = status?.status === "stopped";
   for (const id of [
     "pause",
+    "reset-cycle",
     "stop",
     "speed",
     "mode",
@@ -81,7 +86,12 @@ function refreshControls() {
 }
 function updateStatus(next: SimulationStatus) {
   if (next.id !== simulationId) return;
+  const changedCycle = status?.cycleId !== next.cycleId;
   status = next;
+  el("memory-cycle").textContent =
+    `Cyclus ${next.cycleIndex ?? 1} · ${next.cycleStatus === "closing" ? "Wordt afgesloten" : "Actief"}`;
+  if (changedCycle && !el("memory-panel").hidden)
+    void loadMemory().catch((e) => error(String(e)));
   const codex = (next.agentSessions ?? []).filter(
     (session) => session.controller === "codex",
   );
@@ -96,15 +106,19 @@ function updateStatus(next: SimulationStatus) {
   select("speed").value = String(next.timeScale);
   select("mode").value = next.schedulerMode;
   el("simulation-status").textContent =
-    next.status === "paused"
-      ? "Gepauzeerd"
-      : next.status === "stopped"
-        ? "Gestopt"
-        : next.waitingForDecisions
-          ? "Wachten op beslissingen…"
-          : "Actief";
+    next.cycleStatus === "closing"
+      ? next.cycleError
+        ? "Reset mislukt · probeer opnieuw: " + next.cycleError
+        : "Cyclus afsluiten…"
+      : next.status === "paused"
+        ? "Gepauzeerd"
+        : next.status === "stopped"
+          ? "Gestopt"
+          : next.waitingForDecisions
+            ? "Wachten op beslissingen…"
+            : "Actief";
   el("clock-details").textContent =
-    `${next.timeScale}× · ${next.schedulerMode === "live" ? "Live" : "Experiment"} · achterstand ${Math.round(next.backlogMs)} ms · overgeslagen ${Math.round(next.droppedSimulationTimeMs)} ms`;
+    `Cyclus ${next.cycleIndex ?? 1} · ${next.timeScale}× · ${next.schedulerMode === "live" ? "Live" : "Experiment"} · achterstand ${Math.round(next.backlogMs)} ms · overgeslagen ${Math.round(next.droppedSimulationTimeMs)} ms`;
   refreshControls();
 }
 function update(next: WorldStateDto) {
@@ -136,6 +150,8 @@ function update(next: WorldStateDto) {
       const id = agent.id;
       card.addEventListener("click", () => {
         selectedAgent = id;
+        if (!el("memory-panel").hidden)
+          void loadMemory().catch((e) => error(String(e)));
         scene?.focusAgent(id);
         el("observation").textContent =
           `${agent.name} geselecteerd. Bekijk de actuele waarneming of annuleer de lopende actie.`;
@@ -203,6 +219,10 @@ function subscribe(id: string): Promise<void> {
     status = undefined;
     state = undefined;
     el("agents").replaceChildren();
+    el("memory-list").replaceChildren();
+    el("memory-summary").textContent = "";
+    el("memory-goals").textContent = "";
+    el("decision-list").replaceChildren();
     // Update reconnect subscription as well as the current socket room.
     socket.io.opts.query = { simulationId: id };
     socket
@@ -269,6 +289,77 @@ button("pause").addEventListener(
         ),
       ),
     ),
+);
+button("reset-cycle").addEventListener(
+  "click",
+  () =>
+    void control(async () => {
+      const snapshot = await request(
+        `/simulations/${simulationId}/reset`,
+        "POST",
+      );
+      scene?.load(snapshot.definition);
+      update(snapshot.state);
+      updateStatus(snapshot.simulation);
+      if (!el("memory-panel").hidden) await loadMemory();
+    }),
+);
+async function loadMemory() {
+  const run = simulationId,
+    agent = selectedAgent;
+  const query = (el("memory-query") as HTMLInputElement).value;
+  const [memories, context] = await Promise.all([
+    request(
+      `/simulations/${run}/agents/${agent}/memories?q=${encodeURIComponent(query)}`,
+    ) as Promise<AgentMemory[]>,
+    request(
+      `/simulations/${run}/agents/${agent}/memory-context`,
+    ) as Promise<MemoryContext>,
+  ]);
+  if (run !== simulationId || agent !== selectedAgent) return;
+  el("memory-agent").textContent = `Geheugen · ${agent}`;
+  el("memory-summary").textContent =
+    context.summary ||
+    "Na de eerste cyclus worden ervaringen samengevoegd tot blijvend geheugen.";
+  el("memory-goals").textContent = `Doelen: ${context.goals.join(" · ")}`;
+  const list = el("memory-list");
+  list.replaceChildren();
+  if (!memories.length) {
+    const empty = document.createElement("li");
+    empty.textContent = "Geen herinneringen gevonden voor deze agent.";
+    list.append(empty);
+  }
+  for (const memory of memories) {
+    const item = document.createElement("li");
+    const label = document.createElement("small");
+    label.textContent = `${memory.type} · ${memory.provenance} · vertrouwen ${Math.round(memory.confidence * 100)}% · belang ${Math.round(memory.importance * 100)}% · revisie ${memory.revision}`;
+    const content = document.createElement("p");
+    content.textContent = memory.content;
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `${memory.sourceEventIds.length} brongebeurtenissen${memory.conflictsWith?.length ? ` · ${memory.conflictsWith.length} tegenstrijdige claims` : ""}`;
+    const sources = document.createElement("p");
+    sources.textContent = memory.sourceEventIds.join(" · ");
+    details.append(summary, sources);
+    item.append(label, content, details);
+    list.append(item);
+  }
+}
+for (const tab of ["live", "memory"])
+  button(`${tab}-tab`).addEventListener("click", () => {
+    for (const name of ["live", "memory"]) {
+      el(`${name}-panel`).hidden = name !== tab;
+      button(`${name}-tab`).setAttribute("aria-pressed", String(name === tab));
+    }
+    if (tab === "memory") void control(loadMemory);
+  });
+el("memory-search").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void control(loadMemory);
+});
+button("memory-refresh").addEventListener(
+  "click",
+  () => void control(loadMemory),
 );
 button("stop").addEventListener(
   "click",

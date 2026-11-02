@@ -163,6 +163,34 @@ describe("Codex decisions", () => {
       await adapter.close();
     }
   });
+  it("starts a fresh thread after a cycle reset and supplies only the agent's retained memory", async () => {
+    const { rpc, adapter } = setup();
+    try {
+      await adapter.decide(observation());
+      const firstThread = adapter.statuses()[0]!.threadId;
+      await adapter.resetCycle();
+      expect(adapter.statuses()).toEqual([]);
+      expect(adapter.journal.list()).toEqual([]);
+      const next = observation();
+      next.memory = {
+        summary: "I saw a cave to the north.",
+        relevant: [],
+        recent: [],
+        goals: ["Revisit the cave."],
+      };
+      await adapter.decide(next);
+      expect(adapter.statuses()[0]!.threadId).not.toBe(firstThread);
+      expect(rpc.calls.filter((c) => c.method === "thread/start")).toHaveLength(
+        2,
+      );
+      expect(
+        rpc.calls.filter((c) => c.method === "turn/start").at(-1)!.params
+          .input[0].text,
+      ).toContain("I saw a cave");
+    } finally {
+      await adapter.close();
+    }
+  });
   it("keeps separate threads and denies unknown thread, namespace and identity overrides", async () => {
     const { rpc, adapter } = setup();
     try {

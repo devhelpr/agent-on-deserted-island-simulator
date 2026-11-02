@@ -1,6 +1,6 @@
 # Agent Island
 
-Local-first simulatieplatform in TypeScript. Mijlpaal 3 voegt echte Codex-agents en een agentgebonden MCP-runtime toe. De wereldbasis levert een deterministisch 3D-eiland met drie scripted agents, een instelbare simulatieklok, navigatie en gedeelde objectinteracties. Hono en de World Engine beheren de wereld; Socket.IO stuurt de toestand naar de Vite/Three.js-viewer. Codex is optioneel; de standaardrun blijft scripted.
+Local-first simulatieplatform in TypeScript. Mijlpaal 4 voegt duurzaam agentgeheugen, crashherstel en terugkerende cycli toe. Echte Codex-agents gebruiken een agentgebonden MCP-runtime. De wereldbasis levert een deterministisch 3D-eiland met drie scripted agents, een instelbare simulatieklok, navigatie en gedeelde objectinteracties. Hono en de World Engine beheren de wereld; Socket.IO stuurt de toestand naar de Vite/Three.js-viewer. Codex is optioneel; de standaardrun blijft scripted.
 
 ## Lokaal starten
 
@@ -15,6 +15,7 @@ Open **http://127.0.0.1:5173**. De backend luistert op **http://127.0.0.1:3001**
 
 - Sleep om de camera te draaien; scroll om te zoomen. Klik op Alpha, Beta of Gamma om de camera op die agent te richten.
 - Pauzeer/hervat de klok, kies 1×/2×/5×/10×/20× en wissel tussen Live en Experiment.
+- Iedere cyclus duurt 72.000 ticks (één virtueel uur). **Cyclus resetten** herstelt de beginwereld en behoudt het eigen geheugen. De **Geheugen**-tab toont bronnen, confidence, importance, revisies en tekstzoekresultaten per agent.
 - Stoppen is definitief voor een run; Nieuwe run maakt een onafhankelijk experiment. De runkeuze schakelt de liveverbinding naar de juiste Socket.IO-room.
 - Bekijk de waarneming van de geselecteerde agent of annuleer diens actie. Een scripted agent kiest bij de volgende tick opnieuw een actie.
 - De tijdlijn toont recente resultaten en fouten; inventarissen en gedragen objecten volgen de servertoestand.
@@ -41,6 +42,8 @@ npm run build
 - `apps/server/src/world`: wereldgenerator, autoritatieve engine, navmesh/A* en perceptie.
 - `apps/server/src/simulation`: vaste virtuele klok en afzonderlijke simulatieruns.
 - `apps/server/src/agents`: annuleerbare scheduler, scripted policy, CodexAdapter en beslisjournal.
+- `apps/server/src/storage`: SQLite + Drizzle-schema, automatische migraties en transactionele checkpoints.
+- `apps/server/src/memory`: agentgebonden consolidatie, FTS, bronclaims en contextselectie.
 - `packages/world-mcp`: gevalideerde wereldtools via MCP InMemoryTransport.
 - `packages/shared`: getypeerde contracten, Zod-schema's en heightmap-sampling.
 - [TODO.md](TODO.md): zes mijlpalen, taken en acceptatiecriteria.
@@ -68,7 +71,11 @@ Perceptie gebruikt 25 m horizontaal bereik, een zichtveld van 120° en 2D-occlus
 
 ## API
 
-De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, maximaal 8 runs per proces. Een serverherstart begint opnieuw. Opslag, automatische cyclusresets, blijvend agentgeheugen en replay volgen in latere mijlpalen.
+De standaardrun is `sim-001`. De server bewaart maximaal 8 runs in `apps/server/data/agent-island.sqlite` bij `npm run dev` of `npm start -w @agent-island/server`. Stel `AGENT_ISLAND_DB` in op een absoluut pad voor een andere database. Migraties worden automatisch toegepast; `npm run db:generate -w @agent-island/server` genereert toekomstige schemamigraties. De testfactory `createApp()` gebruikt standaard een onafhankelijke in-memory SQLite-database.
+
+Na een herstart worden bestaande runs gepauzeerd hersteld, inclusief posities, objectbezit, routes, wachttijden, acties, beslissingen en geheugen. Klik op **Hervatten** om verder te gaan. Een reeds gestopte run blijft gestopt. Onderbroken modelbeslissingen worden geannuleerd; Codex begint met een nieuwe thread en het eigen geheugen. Een crash tijdens het afsluiten van een cyclus laat die cyclus geblokkeerd voor acties; hervatten of resetten herhaalt de transactionele afsluiting.
+
+Perceptiegebaseerde consolidatie is deterministisch en doet geen extra modelaanroep: zichtbare objecten leveren semantische locatieclaims op, eigen actieresultaten episodische herinneringen, succesvolle verplaatsingen procedurele routehypotheses en ontvangen berichten gerapporteerde claims. Dubbele claims delen bronnen en revisies; nieuwe directe locatieobservaties vervangen oudere claims, andere tegenspraken blijven gemarkeerd. Context bevat een begrensde samenvatting, relevante eigen herinneringen, recente ervaringen en doelen. Modelgestuurde samenvattingen en replay behoren tot vervolgwerk. Zie het [acceptatieverslag van mijlpaal 4](docs/sprint-4-acceptance.md).
 
 | Methode | Endpoint | Functie |
 | --- | --- | --- |
@@ -82,6 +89,10 @@ De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, m
 | POST | `/api/simulations/:id/pause`, `/resume`, `/stop` | Run bedienen |
 | PATCH | `/api/simulations/:id/speed` | `{ "timeScale": 1/2/5/10/20 }` |
 | PATCH | `/api/simulations/:id/mode` | `{ "schedulerMode": "live"/"experiment" }` |
+| POST | `/api/simulations/:id/reset` | Cyclus afsluiten, geheugen consolideren en beginwereld herstellen |
+| GET | `/api/simulations/:id/agents/:agentId/memories?q=cave` | Eigen actieve herinneringen, optioneel met FTS |
+| GET | `/api/simulations/:id/agents/:agentId/memory-context` | Samenvatting, relevante herinneringen, recente ervaringen en doelen |
+| GET | `/api/simulations/:id/agents/:agentId/decisions` | Duurzame beslissingen over alle cycli, inclusief uitkomsten |
 | GET | `/api/simulations/:id/agents/:agentId/observation` | Beperkte actuele waarneming |
 | POST | `/api/simulations/:id/agents/:agentId/actions` | Zod-gevalideerde actie indienen |
 | GET | `/api/simulations/:id/actions/:actionId` | Actieresultaat |
@@ -89,8 +100,8 @@ De standaardrun is `sim-001`. Alle data staat tijdelijk in het servergeheugen, m
 
 Een nieuwe run accepteert optioneel `worldId: "island-48291"`, `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"` en `codexAgentIds` (standaard `["alpha"]`). Een geaccepteerde actie retourneert HTTP 202 met `{ accepted: true, actionId }`; ongeldige input geeft 400, onbekende resources 404 en conflicten 409. De action-ID geeft toegang tot de uiteindelijke uitkomst. Dit is een lokale onderzoeks-API voor de menselijke operator; modelagents krijgen alleen de interne identiteitgebonden MCP-sessie. Modelbeslissingen zijn leesbaar via `GET /api/simulations/:id/agents/:agentId/decisions`.
 
-Socket.IO verstuurt `world:snapshot` bij (her)verbinden en abonneren. `simulation:subscribe(id, ack)` wisselt de room. `world:delta` bevat `{ simulationId, state }` en `simulation:state` bevat klokstatus. Beide worden maximaal 10 keer per echte seconde verstuurd, onafhankelijk van versnelling. Bedieningswijzigingen leveren ook direct een statusevent op. De viewer interpoleert tussen posities. In deze versie bevat een delta de complete actuele entiteitenlijst en begrensde recente acties/events; opslag en verdere deltacompressie volgen later.
+Socket.IO verstuurt `world:snapshot` bij (her)verbinden en abonneren. `simulation:subscribe(id, ack)` wisselt de room. `world:delta` bevat `{ simulationId, state }` en `simulation:state` bevat klokstatus. Beide worden maximaal 10 keer per echte seconde verstuurd, onafhankelijk van versnelling. Bedieningswijzigingen leveren ook direct een statusevent op. De viewer interpoleert tussen posities. In deze versie bevat een delta de complete actuele entiteitenlijst en begrensde recente acties/events; verdere deltacompressie volgt later.
 
-De engine bewaart maximaal 512 actierecords (open acties blijven behouden), 200 recente globale events en 100 waargenomen events per agent. De netwerktoestand bevat maximaal 60 recente acties en 40 recente events. Dit is geen duurzame replaylog.
+De engine bewaart maximaal 512 actierecords (open acties blijven behouden), 200 recente globale events en 100 waargenomen events per agent. De netwerktoestand bevat maximaal 60 recente acties en 40 recente events. Deze limieten gelden alleen voor de realtime-weergave; SQLite bewaart de volledige eventhistorie, beslissingen en begin-/eindcheckpoints. Historische replay volgt in mijlpaal 5.
 
 Technische referenties: [Hono Node-adapter](https://hono.dev/docs/getting-started/nodejs), [Socket.IO rooms](https://socket.io/docs/v4/rooms/), [Zod](https://zod.dev/basics), [Vite](https://vite.dev/guide/).
