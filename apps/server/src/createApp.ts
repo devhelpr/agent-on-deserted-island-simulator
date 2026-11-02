@@ -5,6 +5,7 @@ import {
   schedulerSchema,
   simulationSchema,
   speedSchema,
+  type ExperimentConfig,
   type ClientEvents,
   type ServerEvents,
 } from "../../../packages/shared/src/index.js";
@@ -29,6 +30,7 @@ export function createApp(
     mode: "live" | "experiment" = "live",
     controller: "scripted" | "codex" = "scripted",
     codexAgentIds: string[] = ["alpha"],
+    experiment?: ExperimentConfig,
   ) => {
     const simulation = new Simulation(
       `sim-${String(nextId++).padStart(3, "0")}`,
@@ -36,7 +38,7 @@ export function createApp(
       timeScale,
       mode,
       options.policy,
-      { controller, codexAgentIds, store },
+      { controller, codexAgentIds, experiment, store },
     );
     simulations.set(simulation.id, simulation);
     return simulation;
@@ -117,6 +119,7 @@ export function createApp(
       input.data.schedulerMode,
       input.data.controller,
       input.data.codexAgentIds,
+      input.data.experiment,
     );
     return c.json(simulation.status(), 201);
   });
@@ -209,6 +212,31 @@ export function createApp(
       observation,
       decisions: decisions.slice(-50),
       discovered,
+    });
+  });
+  app.get("/api/simulations/:id/results", (c) =>
+    c.json({
+      simulation: simulations.get(c.req.param("id"))!.status(),
+      cycles: store.metrics(c.req.param("id")),
+    }),
+  );
+  app.get("/api/simulations/:id/timeline", (c) => {
+    const cycleId =
+      c.req.query("cycleId") ?? simulations.get(c.req.param("id"))!.cycleId;
+    const after = Number(c.req.query("after") ?? 0);
+    if (!Number.isSafeInteger(after) || after < 0)
+      return c.json({ error: "INVALID_CURSOR" }, 400);
+    if (
+      !store.sqlite
+        .prepare("SELECT id FROM simulation_cycles WHERE id=? AND runId=?")
+        .get(cycleId, c.req.param("id"))
+    )
+      return c.json({ error: "CYCLE_NOT_FOUND" }, 404);
+    const events = store.timeline(cycleId, after);
+    return c.json({
+      cycleId,
+      events,
+      nextCursor: events.at(-1)?.sequence ?? after,
     });
   });
   app.get("/api/simulations/:id/agents", (c) =>

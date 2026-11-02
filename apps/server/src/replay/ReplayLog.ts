@@ -24,13 +24,36 @@ const versions = {
 };
 export class ReplayLog {
   constructor(private readonly db: Database.Database) {}
+  // Pure serialization cache: never a patch base or evidence of a durable commit.
+  // Static entities and histories otherwise get recursively sorted twice on every tick.
+  private readonly fields = new Map<
+    string,
+    { json: string; canonical: string }[]
+  >();
+  private canonicalField(key: string, value: unknown) {
+    const json = JSON.stringify(value) ?? "null";
+    const entries = this.fields.get(key) ?? [];
+    const hit = entries.find((entry) => entry.json === json);
+    if (hit) return hit.canonical;
+    const result = canonical(value);
+    this.fields.set(key, [{ json, canonical: result }, ...entries].slice(0, 2));
+    return result;
+  }
   append(cycleId: string, checkpoint: Checkpoint, generator: number) {
     const last = this.db
       .prepare(
         "SELECT sequence, hash FROM replay_frames WHERE cycle_id=? ORDER BY sequence DESC LIMIT 1",
       )
       .get(cycleId) as { sequence: number; hash: string } | undefined;
-    const hash = stateHash(checkpoint);
+    const serialized = `{${Object.entries(checkpoint)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(
+        ([key, value]) =>
+          `${JSON.stringify(key)}:${this.canonicalField(key, value)}`,
+      )
+      .join(",")}}`;
+    const hash = createHash("sha256").update(serialized).digest("hex");
     if (last?.hash === hash) return;
     const sequence = (last?.sequence ?? 0) + 1;
     // The prior durable checkpoint is the patch base, so rolled-back writes leave no cache behind.
@@ -44,7 +67,8 @@ export class ReplayLog {
       : Object.fromEntries(
           Object.entries(checkpoint).filter(
             ([key, value]) =>
-              canonical(value) !== canonical(base[key as keyof Checkpoint]),
+              this.canonicalField(key, value) !==
+              this.canonicalField(key, base[key as keyof Checkpoint]),
           ),
         );
     this.db

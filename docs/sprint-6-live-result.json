@@ -1,0 +1,349 @@
+{
+  "date": "2026-11-02T12:48:04.967Z",
+  "passed": true,
+  "scope": "S6.7: full first cycle, automatic reset, fresh threads and demonstrated memory use by all three agents in cycle two",
+  "fullExperimentCompleted": false,
+  "stoppedAfterAcceptance": true,
+  "evaluation": "Read-only evaluation of committed SQLite evidence after stopping the live runner once S6.7 evidence was present. The second cycle was not run to completion; two full cycles are covered by the deterministic suite.",
+  "configuration": {
+    "controller": "codex",
+    "codexAgentIds": [
+      "alpha",
+      "beta",
+      "gamma"
+    ],
+    "maxCycles": 2,
+    "decisionBudgetPerAgentPerCycle": 8,
+    "timeScale": 20,
+    "schedulerMode": "live"
+  },
+  "metrics": [
+    {
+      "cycleId": "multi-codex:cycle-1",
+      "cycleIndex": 1,
+      "status": "completed",
+      "tick": 72000,
+      "agents": [
+        {
+          "agentId": "alpha",
+          "decisions": 8,
+          "failures": 1,
+          "cancelled": 0,
+          "toolCalls": 8,
+          "decisionTimeMs": 36622,
+          "discoveries": 17,
+          "revisits": 0,
+          "observationCells": 5,
+          "messagesSent": 1,
+          "sharedObjects": 0,
+          "movesToMemoryTargets": 0,
+          "verifiedLocations": 0,
+          "contradictedLocations": 0
+        },
+        {
+          "agentId": "beta",
+          "decisions": 8,
+          "failures": 1,
+          "cancelled": 0,
+          "toolCalls": 8,
+          "decisionTimeMs": 36664,
+          "discoveries": 19,
+          "revisits": 0,
+          "observationCells": 3,
+          "messagesSent": 1,
+          "sharedObjects": 1,
+          "movesToMemoryTargets": 0,
+          "verifiedLocations": 0,
+          "contradictedLocations": 0
+        },
+        {
+          "agentId": "gamma",
+          "decisions": 8,
+          "failures": 2,
+          "cancelled": 0,
+          "toolCalls": 8,
+          "decisionTimeMs": 39624,
+          "discoveries": 19,
+          "revisits": 0,
+          "observationCells": 4,
+          "messagesSent": 0,
+          "sharedObjects": 1,
+          "movesToMemoryTargets": 0,
+          "verifiedLocations": 0,
+          "contradictedLocations": 0
+        }
+      ]
+    },
+    {
+      "cycleId": "multi-codex:cycle-2",
+      "cycleIndex": 2,
+      "status": "active",
+      "tick": 23055,
+      "agents": [
+        {
+          "agentId": "alpha",
+          "decisions": 7,
+          "failures": 1,
+          "cancelled": 0,
+          "toolCalls": 6,
+          "decisionTimeMs": 96110,
+          "discoveries": 26,
+          "revisits": 6,
+          "observationCells": 7,
+          "messagesSent": 0,
+          "sharedObjects": 0,
+          "movesToMemoryTargets": 1,
+          "verifiedLocations": 3,
+          "contradictedLocations": 0
+        },
+        {
+          "agentId": "beta",
+          "decisions": 8,
+          "failures": 2,
+          "cancelled": 0,
+          "toolCalls": 8,
+          "decisionTimeMs": 33669,
+          "discoveries": 31,
+          "revisits": 14,
+          "observationCells": 7,
+          "messagesSent": 0,
+          "sharedObjects": 0,
+          "movesToMemoryTargets": 2,
+          "verifiedLocations": 5,
+          "contradictedLocations": 0
+        },
+        {
+          "agentId": "gamma",
+          "decisions": 8,
+          "failures": 2,
+          "cancelled": 0,
+          "toolCalls": 8,
+          "decisionTimeMs": 31850,
+          "discoveries": 13,
+          "revisits": 11,
+          "observationCells": 3,
+          "messagesSent": 1,
+          "sharedObjects": 0,
+          "movesToMemoryTargets": 2,
+          "verifiedLocations": 6,
+          "contradictedLocations": 0
+        }
+      ]
+    }
+  ],
+  "threads": [
+    {
+      "agentId": "alpha",
+      "cycleId": "multi-codex:cycle-1",
+      "threadId": "01a19c45-e1a5-7861-862e-1521e84a79d5"
+    },
+    {
+      "agentId": "beta",
+      "cycleId": "multi-codex:cycle-1",
+      "threadId": "01a19c45-e1a5-7861-862e-153fe28aea4d"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-1",
+      "threadId": "01a19c45-e1a5-7861-862e-1518304b383c"
+    },
+    {
+      "agentId": "alpha",
+      "cycleId": "multi-codex:cycle-2",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd2c9d95c55c"
+    },
+    {
+      "agentId": "beta",
+      "cycleId": "multi-codex:cycle-2",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd19f92a0f4b"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-2",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd3deb253faa"
+    }
+  ],
+  "errors": [
+    {
+      "agentId": "alpha",
+      "cycleId": "multi-codex:cycle-1",
+      "tick": 0,
+      "error": "UNREACHABLE"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-1",
+      "tick": 0,
+      "error": "UNREACHABLE"
+    },
+    {
+      "agentId": "beta",
+      "cycleId": "multi-codex:cycle-1",
+      "tick": 4386,
+      "error": "PATH_BLOCKED"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-1",
+      "tick": 4955,
+      "error": "RECIPIENT_NOT_VISIBLE"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-2",
+      "tick": 1582,
+      "error": "PATH_BLOCKED"
+    },
+    {
+      "agentId": "beta",
+      "cycleId": "multi-codex:cycle-2",
+      "tick": 1848,
+      "error": "PATH_BLOCKED"
+    },
+    {
+      "agentId": "gamma",
+      "cycleId": "multi-codex:cycle-2",
+      "tick": 3956,
+      "error": "UNREACHABLE"
+    },
+    {
+      "agentId": "beta",
+      "cycleId": "multi-codex:cycle-2",
+      "tick": 8767,
+      "error": "UNREACHABLE"
+    },
+    {
+      "agentId": "alpha",
+      "cycleId": "multi-codex:cycle-2",
+      "tick": 22557,
+      "error": "CODEX_DISCONNECTED"
+    }
+  ],
+  "memoryEvidence": [
+    {
+      "agentId": "alpha",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd2c9d95c55c",
+      "action": {
+        "type": "move",
+        "target": {
+          "x": 22,
+          "y": 19.0633344,
+          "z": -18
+        }
+      },
+      "outcome": "succeeded",
+      "memories": [
+        {
+          "id": "ada10237-bb87-4157-a914-5df5bfda9a21",
+          "agentId": "alpha",
+          "cycleId": "multi-codex:cycle-1",
+          "target": {
+            "x": 22,
+            "y": 19.0633344,
+            "z": -18
+          }
+        }
+      ]
+    },
+    {
+      "agentId": "beta",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd19f92a0f4b",
+      "action": {
+        "type": "move",
+        "target": {
+          "x": -22,
+          "y": 20.461144,
+          "z": 40
+        }
+      },
+      "outcome": "succeeded",
+      "memories": [
+        {
+          "id": "c7919ac3-bc93-4d6a-b85a-faecee9a6fae",
+          "agentId": "beta",
+          "cycleId": "multi-codex:cycle-1",
+          "target": {
+            "x": -22,
+            "y": 20.461144,
+            "z": 40
+          }
+        }
+      ]
+    },
+    {
+      "agentId": "gamma",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd3deb253faa",
+      "action": {
+        "type": "move",
+        "target": {
+          "x": -6,
+          "y": 25.342179199999997,
+          "z": 16
+        }
+      },
+      "outcome": "succeeded",
+      "memories": [
+        {
+          "id": "ace2f668-a8e0-4750-9a64-a5e685ef80be",
+          "agentId": "gamma",
+          "cycleId": "multi-codex:cycle-1",
+          "target": {
+            "x": -6,
+            "y": 25.342179199999997,
+            "z": 16
+          }
+        }
+      ]
+    },
+    {
+      "agentId": "beta",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd19f92a0f4b",
+      "action": {
+        "type": "move",
+        "target": {
+          "x": -10,
+          "y": 11.53744,
+          "z": 78
+        }
+      },
+      "outcome": "succeeded",
+      "memories": [
+        {
+          "id": "2bf1c219-7625-42bf-87bb-fbc991d206a5",
+          "agentId": "beta",
+          "cycleId": "multi-codex:cycle-1",
+          "target": {
+            "x": -10,
+            "y": 11.537439999999997,
+            "z": 78
+          }
+        }
+      ]
+    },
+    {
+      "agentId": "gamma",
+      "threadId": "01a19c4b-0be7-7371-9cf0-cd3deb253faa",
+      "action": {
+        "type": "move",
+        "target": {
+          "x": -25,
+          "y": 25.65376,
+          "z": -1
+        }
+      },
+      "outcome": "succeeded",
+      "memories": [
+        {
+          "id": "11cf979c-f0ee-4fc2-9a5b-d57f65d0812b",
+          "agentId": "gamma",
+          "cycleId": "multi-codex:cycle-1",
+          "target": {
+            "x": -25,
+            "y": 25.65376,
+            "z": -1
+          }
+        }
+      ]
+    }
+  ]
+}

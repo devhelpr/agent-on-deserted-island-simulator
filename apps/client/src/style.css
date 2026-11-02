@@ -817,3 +817,38 @@ select:focus-visible {
 #replay-info {
   overflow-wrap: anywhere;
 }
+
+.simulation-controls input[type="number"] {
+  width: 100px;
+  padding: 9px;
+  border: 1px solid #aebbae;
+  border-radius: 5px;
+  font: inherit;
+}
+.data-tabs {
+  flex-wrap: wrap;
+}
+.results-scroll {
+  overflow-x: auto;
+  margin: 20px 0;
+}
+#experiment-results {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+#experiment-results th,
+#experiment-results td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #bbc9b9;
+  white-space: nowrap;
+}
+#experiment-results th {
+  color: #304e40;
+}
+#results-panel p,
+#history-events {
+  font-size: 13px;
+  line-height: 1.7;
+}

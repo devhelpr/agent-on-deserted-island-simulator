@@ -29,6 +29,7 @@ export class AgentScheduler {
     private readonly engine: WorldEngine,
     private readonly policy: DecisionPolicy,
     private readonly timeoutMs = 10000,
+    private readonly canDecide: (agentId: string) => boolean = () => true,
   ) {}
   pendingAgents(): string[] {
     return [...this.decisions]
@@ -50,7 +51,7 @@ export class AgentScheduler {
         this.decisions.delete(id);
       }
     for (const agent of idle)
-      if (!this.decisions.has(agent.id)) {
+      if (!this.decisions.has(agent.id) && this.canDecide(agent.id)) {
         const d: Decision = { ready: false, controller: new AbortController() };
         const epoch = this.epoch;
         this.decisions.set(agent.id, d);

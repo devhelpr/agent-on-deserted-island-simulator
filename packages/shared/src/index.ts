@@ -142,6 +142,43 @@ export const speedSchema = z.strictObject({
 export const schedulerSchema = z.strictObject({
   schedulerMode: z.enum(["live", "experiment"]),
 });
+export const experimentSchema = z.strictObject({
+  maxCycles: z.number().int().min(1).max(100).default(2),
+  decisionBudgetPerAgentPerCycle: z
+    .number()
+    .int()
+    .min(1)
+    .max(10000)
+    .default(120),
+});
+export type ExperimentConfig = z.infer<typeof experimentSchema>;
+export interface ExperimentProgress extends ExperimentConfig {
+  decisionsUsed: Record<string, number>;
+  exhaustedAgents: string[];
+  completed: boolean;
+}
+export interface CycleMetrics {
+  cycleId: string;
+  cycleIndex: number;
+  status: string;
+  tick: number;
+  agents: {
+    agentId: string;
+    decisions: number;
+    failures: number;
+    cancelled: number;
+    toolCalls: number;
+    decisionTimeMs: number;
+    discoveries: number;
+    revisits: number;
+    observationCells: number;
+    messagesSent: number;
+    sharedObjects: number;
+    movesToMemoryTargets: number;
+    verifiedLocations: number;
+    contradictedLocations: number;
+  }[];
+}
 export const simulationSchema = z.strictObject({
   worldId: z
     .enum(["island-48291", "island-48291-v3"])
@@ -149,6 +186,7 @@ export const simulationSchema = z.strictObject({
   timeScale: speedSchema.shape.timeScale.default(1),
   schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
   controller: z.enum(["scripted", "codex"]).default("scripted"),
+  experiment: experimentSchema.optional(),
   codexAgentIds: z
     .array(z.enum(["alpha", "beta", "gamma"]))
     .min(1)
@@ -180,6 +218,7 @@ export interface DecisionRecord {
   publicMessage?: string;
   error?: string;
   outcome?: ActionRecord;
+  durationMs?: number;
   tools: {
     tool: string;
     arguments: unknown;
@@ -226,7 +265,8 @@ export interface SimulationStatus {
   agentSessions?: AgentSessionStatus[];
   cycleId?: string;
   cycleIndex?: number;
-  cycleStatus?: "active" | "closing";
+  cycleStatus?: "active" | "closing" | "completed";
+  experiment?: ExperimentProgress;
   cycleError?: string;
 }
 export interface WorldSnapshot {

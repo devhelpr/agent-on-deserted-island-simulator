@@ -261,14 +261,16 @@ export class WorldEngine {
     for (const observer of this.agents.values())
       if (
         observer.id === agent.id ||
-        (canSee(observer, event.position, this.entityList()) &&
-          (!targetId ||
-            canSee(
-              observer,
-              this.entities.get(targetId)?.position ?? event.position,
-              this.entityList(),
-              targetId,
-            )))
+        (type === "agent:message"
+          ? observer.id === targetId
+          : canSee(observer, event.position, this.entityList()) &&
+            (!targetId ||
+              canSee(
+                observer,
+                this.entities.get(targetId)?.position ?? event.position,
+                this.entityList(),
+                targetId,
+              )))
       ) {
         const list = this.observedEvents.get(observer.id)!;
         list.push(event);
@@ -356,6 +358,7 @@ export class WorldEngine {
       if (messages.length > 50) messages.shift();
       this.messages.set(recipient.id, messages);
       this.finish(action, "succeeded", undefined, { delivered: true });
+      this.event(action, "agent:message", input.message, recipient.id);
       return;
     }
     const entity = this.entities.get(input.entityId);

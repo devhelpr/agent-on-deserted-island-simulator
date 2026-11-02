@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Simulation } from "../simulation/Simulation.js";
+import { SimulationStore } from "../storage/SimulationStore.js";
 import { WorldEngine } from "./WorldEngine.js";
-import { flatWorld, p } from "./testFixtures.js";
+import { flatWorld, p, entity } from "./testFixtures.js";
 describe("bounded world communication", () => {
   it("delivers only to visible nearby recipients and preserves the action result for the next decision", () => {
     const engine = new WorldEngine(flatWorld(), [
@@ -60,4 +62,66 @@ describe("encounter greetings", () => {
     expect(engine.observe("alpha")!.messages).toHaveLength(2);
     expect(engine.observe("beta")!.messages).toHaveLength(2);
   });
+});
+
+it("retains explicit speech and shared interactions as scoped experiment evidence", async () => {
+  const store = new SimulationStore();
+  const sim = new Simulation("speech", 0, 1, "experiment", null, {
+    store,
+    definition: flatWorld([entity("rock", "rock", -17, -16)]),
+  });
+  try {
+    for (const id of ["alpha", "beta"])
+      sim.engine.submitAction(id, { type: "inspect", entityId: "rock" });
+    sim.engine.step();
+    sim.engine.submitAction("alpha", {
+      type: "look",
+      orientation: Math.PI / 2,
+    });
+    sim.engine.step();
+    sim.engine.submitAction("alpha", {
+      type: "communicate",
+      recipientId: "beta",
+      message: "The rock is near (-17, -16).",
+    });
+    sim.engine.step();
+    expect(
+      sim.engine
+        .observe("beta")!
+        .messages!.some((m) => m.text.startsWith("The rock")),
+    ).toBe(true);
+    const message = store
+      .timeline(sim.cycleId, 0)
+      .find((e) => e.type === "agent:message")!;
+    expect(message).toMatchObject({
+      actorId: "alpha",
+      targetId: "beta",
+      message: "The rock is near (-17, -16).",
+    });
+    expect(
+      sim.engine
+        .observe("gamma")!
+        .recentEvents.some((e) => e.type === "agent:message"),
+    ).toBe(false);
+    const metrics = store.metrics(sim.id)[0]!.agents;
+    expect(metrics.find((a) => a.agentId === "alpha")).toMatchObject({
+      messagesSent: 1,
+      sharedObjects: 1,
+    });
+    expect(metrics.find((a) => a.agentId === "beta")!.sharedObjects).toBe(1);
+    await sim.reset();
+    expect(
+      sim
+        .memory!.list("beta")
+        .some(
+          (m) => m.provenance === "reported" && m.content.includes("The rock"),
+        ),
+    ).toBe(true);
+    expect(
+      sim.memory!.list("gamma").some((m) => m.content.includes("The rock")),
+    ).toBe(false);
+  } finally {
+    await sim.shutdown();
+    store.close();
+  }
 });

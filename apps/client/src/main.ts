@@ -1,6 +1,8 @@
 import { io, type Socket } from "socket.io-client";
 import type {
   AgentMemory,
+  CycleMetrics,
+  WorldEvent,
   DecisionRecord,
   MemoryContext,
   ClientEvents,
@@ -12,12 +14,14 @@ import { IslandScene } from "./world/IslandScene";
 import "./style.css";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
-<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 05 <span>/</span> REPLAY</span></header>
+<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 06 <span>/</span> EXPERIMENTEN</span></header>
 <main><section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">EXPERIMENT · SEED <span id="seed">—</span></p><h1>Samen op onbekend terrein.</h1><p class="intro">Drie verkenners. Eén gedeeld eiland. Elke actie telt.</p></div><span class="local-badge">LOCAL FIRST ↗</span></div>
-<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="reset-cycle" type="button" disabled>Cyclus resetten</button><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option></select></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
+<div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="reset-cycle" type="button" disabled>Cyclus resetten</button><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option><option value="codex-all">3 autonome Codex-agents</option></select></label><label>Cycli<input id="max-cycles" type="number" min="1" max="100" value="2" /></label><label>Besluiten / agent / cyclus<input id="decision-budget" type="number" min="1" max="10000" value="120" /></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
 <div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label" id="view-source"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle" id="view-camera">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
 <div class="metrics"><div><span>WERELDTIJD</span><strong id="world-time">00:00</strong></div><div><span>SIMULATIETICK</span><strong id="tick">0</strong></div><div><span>EILAND</span><strong id="size">—</strong></div><div><span>OBJECTEN</span><strong id="entity-count">—</strong></div></div>
-<nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live & beslissingen</button><button id="replay-tab" type="button" aria-pressed="false">Replay</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
+<nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live</button><button id="timeline-tab" type="button" aria-pressed="false">Timeline</button><button id="results-tab" type="button" aria-pressed="false">Experiment</button><button id="replay-tab" type="button" aria-pressed="false">Replay</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
+<section id="timeline-panel" hidden aria-label="Historische tijdlijn"><h2>Timeline</h2><div class="simulation-controls"><label>Cyclus<select id="timeline-cycle"></select></label><button id="timeline-refresh" type="button">Vernieuwen</button><button id="timeline-more" type="button">Meer laden</button></div><ol id="history-events"></ol></section>
+<section id="results-panel" hidden aria-label="Experimentresultaten"><h2>Vergelijking tussen cycli</h2><button id="results-refresh" type="button">Vernieuwen</button><p id="experiment-progress" role="status"></p><p>Herbezoeken: eerder waargenomen objecten. Samenwerking: geslaagde expliciete berichten en objecten waarmee meerdere agents succesvol interacteren. Geheugengebruik: geslaagde bewegingen naar aangeleverde geheugendoelen. Dit is een meetbare aanwijzing voor gebruik, geen bewijs van modelredenering.</p><p>Locatiecontrole vergelijkt opnieuw zichtbare objecten met bronwaarnemingen van opgehaalde herinneringen (tolerantie 10 cm). Verplaatste objecten kunnen afwijken. Geen controle betekent onbekend.</p><div class="results-scroll"><table id="experiment-results"></table></div><p id="experiment-errors"></p></section>
 <section id="replay-panel" hidden aria-label="Replay"><div class="simulation-controls"><label>Cyclus<select id="replay-cycle"></select></label><button id="replay-refresh" type="button">Vernieuwen</button><button id="replay-play" type="button">Afspelen</button><label>Afspeelsnelheid<select id="replay-speed"><option>1</option><option>2</option><option>5</option><option>10</option><option>20</option></select></label><label>Weergave<select id="replay-pov"><option value="">Vrije camera</option><option value="alpha">Alpha POV</option><option value="beta">Beta POV</option><option value="gamma">Gamma POV</option></select></label></div><label class="replay-seek">Tijdlijn<input id="replay-seek" type="range" min="0" max="0" value="0" step="1" /></label><p id="replay-info" role="status"></p><div class="replay-discovery"><canvas id="discovery-map" width="260" height="260" aria-label="Ontdekte objectlocaties op het eiland"></canvas><p id="discovery-info">Kies een agent POV om ontdekkingen tot dit tijdstip te bekijken.</p></div><h2>Decision Inspector</h2><p>Vastgelegde waarneming, geheugen, publieke motivatie, tools en resultaat.</p><div id="replay-decisions"></div></section>
 <section id="memory-panel" hidden aria-label="Agentgeheugen"><div class="memory-heading"><h2 id="memory-agent">Geheugen · Alpha</h2><span id="memory-cycle"></span></div><form id="memory-search"><label>Doorzoek herinneringen<input id="memory-query" type="search" maxlength="500" placeholder="Bijvoorbeeld cave of rock" /></label><button type="submit">Zoeken</button><button id="memory-refresh" type="button">Vernieuwen</button></form><p id="memory-summary"></p><p id="memory-goals"></p><ol id="memory-list"></ol></section>
 <div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><div class="simulation-controls"><label>Agentfilter voor recente acties<select id="event-agent"><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label></div><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Bekijk alle beslissingen of filter op een agent.</li></ol></div></div>
@@ -25,7 +29,7 @@ app.innerHTML = `
 <div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><label>Agentfilter voor beslissingen<select id="decision-agent" disabled><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
 <div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents begroeten elkaar, onderzoeken objecten en verzamelen kristallen, schelpen en relikwieën. Eén object kan maar één eigenaar hebben.</p></div></div>
 <div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
-<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>Samen leren.</h3><p>Sprint 06 voegt experimentvergelijkingen en gebruiksregistratie toe.</p><span>06 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · <span id="generator-version">Generator v3</span></span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
+<div class="next"><p class="eyebrow">EXPERIMENTEN</p><h3>Samen leren.</h3><p>Vergelijk cycli, volg het beslisbudget en controleer herinneringen via hun bronnen.</p><span>06 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · <span id="generator-version">Generator v3</span></span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
 const el = (id: string) => document.getElementById(id)!;
 let scene: IslandScene | undefined;
 try {
@@ -98,7 +102,7 @@ function updateStatus(next: SimulationStatus) {
   const changedCycle = status?.cycleId !== next.cycleId;
   status = next;
   el("memory-cycle").textContent =
-    `Cyclus ${next.cycleIndex ?? 1} · ${next.cycleStatus === "closing" ? "Wordt afgesloten" : "Actief"}`;
+    `Cyclus ${next.cycleIndex ?? 1} · ${next.cycleStatus === "closing" ? "Wordt afgesloten" : next.cycleStatus === "completed" ? "Afgerond" : "Actief"}`;
   if (changedCycle && !el("memory-panel").hidden)
     void loadMemory().catch((e) => error(String(e)));
   const codex = (next.agentSessions ?? []).filter(
@@ -114,8 +118,9 @@ function updateStatus(next: SimulationStatus) {
     : "Scripted agents · geen modelaanroepen";
   select("speed").value = String(next.timeScale);
   select("mode").value = next.schedulerMode;
-  el("simulation-status").textContent =
-    next.cycleStatus === "closing"
+  el("simulation-status").textContent = next.experiment?.completed
+    ? "Experiment voltooid"
+    : next.cycleStatus === "closing"
       ? next.cycleError
         ? "Reset mislukt · probeer opnieuw: " + next.cycleError
         : "Cyclus afsluiten…"
@@ -126,6 +131,18 @@ function updateStatus(next: SimulationStatus) {
           : next.waitingForDecisions
             ? "Wachten op beslissingen…"
             : "Actief";
+  if (next.experiment)
+    el("runtime-status").textContent +=
+      ` · Cyclus ${next.cycleIndex}/${next.experiment.maxCycles} · budget ${Object.entries(
+        next.experiment.decisionsUsed,
+      )
+        .map(
+          ([id, n]) =>
+            `${id} ${n}/${next.experiment!.decisionBudgetPerAgentPerCycle}`,
+        )
+        .join(
+          ", ",
+        )}${next.experiment.exhaustedAgents.length ? " · Budget bereikt: " + next.experiment.exhaustedAgents.join(", ") : ""}${next.experiment.completed ? " · Experiment voltooid" : ""}`;
   el("clock-details").textContent =
     `Cyclus ${next.cycleIndex ?? 1} · ${next.timeScale}× · ${next.schedulerMode === "live" ? "Live" : "Experiment"} · achterstand ${Math.round(next.backlogMs)} ms · overgeslagen ${Math.round(next.droppedSimulationTimeMs)} ms`;
   refreshControls();
@@ -243,10 +260,17 @@ function subscribe(id: string): Promise<void> {
   return new Promise((resolve, reject) => {
     stopReplay();
     replayRequest++;
+    historyGeneration++;
     replayActive = false;
     el("replay-panel").hidden = true;
     el("live-panel").hidden = false;
     el("memory-panel").hidden = true;
+    for (const tab of ["timeline", "results"]) {
+      el(`${tab}-panel`).hidden = true;
+      button(`${tab}-tab`).setAttribute("aria-pressed", "false");
+    }
+    el("history-events").replaceChildren();
+    el("experiment-results").replaceChildren();
     button("live-tab").setAttribute("aria-pressed", "true");
     button("memory-tab").setAttribute("aria-pressed", "false");
     el("view-source").textContent = "LIVE WORLD";
@@ -389,9 +413,9 @@ async function loadMemory() {
     list.append(item);
   }
 }
-for (const tab of ["live", "memory", "replay"])
+for (const tab of ["live", "timeline", "memory", "replay", "results"])
   button(`${tab}-tab`).addEventListener("click", () => {
-    for (const name of ["live", "memory", "replay"]) {
+    for (const name of ["live", "timeline", "memory", "replay", "results"]) {
       el(`${name}-panel`).hidden = name !== tab;
       button(`${name}-tab`).setAttribute("aria-pressed", String(name === tab));
     }
@@ -409,6 +433,8 @@ for (const tab of ["live", "memory", "replay"])
     }
     refreshControls();
     if (tab === "memory") void control(loadMemory);
+    if (tab === "results") void control(loadResults);
+    if (tab === "timeline") void control(loadTimelineCycles);
   });
 el("memory-search").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -454,8 +480,20 @@ button("new-run").addEventListener(
   () =>
     void control(async () => {
       const run = await request("/simulations", "POST", {
-        controller: select("controller").value,
-        codexAgentIds: ["alpha"],
+        controller:
+          select("controller").value === "scripted" ? "scripted" : "codex",
+        codexAgentIds:
+          select("controller").value === "codex-all"
+            ? ["alpha", "beta", "gamma"]
+            : ["alpha"],
+        timeScale: Number(select("speed").value),
+        schedulerMode: select("mode").value,
+        experiment: {
+          maxCycles: Number((el("max-cycles") as HTMLInputElement).value),
+          decisionBudgetPerAgentPerCycle: Number(
+            (el("decision-budget") as HTMLInputElement).value,
+          ),
+        },
       });
       await subscribe(run.id);
       await loadRuns();
@@ -690,3 +728,137 @@ button("replay-play").addEventListener("click", () => {
   button("replay-play").textContent = "Pauzeren";
   void playReplay();
 });
+
+async function loadResults() {
+  const run = simulationId;
+  const data: { simulation: SimulationStatus; cycles: CycleMetrics[] } =
+    await request(`/simulations/${run}/results`);
+  if (run !== simulationId) return;
+  const progress = data.simulation.experiment;
+  el("experiment-progress").textContent = progress
+    ? `Seed ${liveSnapshot?.definition.seed ?? "—"} · Cyclus ${data.simulation.cycleIndex}/${progress.maxCycles} · ${progress.completed ? "Voltooid" : data.simulation.status} · Maximaal ${progress.decisionBudgetPerAgentPerCycle} beslispogingen per agent per cyclus`
+    : "Doorlopende run zonder experimentlimiet.";
+  const table = el("experiment-results");
+  table.replaceChildren();
+  const header = document.createElement("tr");
+  for (const title of [
+    "Cyclus",
+    "Status / tick",
+    "Agent",
+    "Besluiten",
+    "Fouten",
+    "Geannuleerd",
+    "Tools",
+    "Beslistijd (s)",
+    "Objecten",
+    "Herbezoeken",
+    "Vakken (25 m)",
+    "Berichten",
+    "Gedeelde objecten",
+    "Geheugendoelen",
+    "Locaties juist / afwijkend",
+  ]) {
+    const th = document.createElement("th");
+    th.textContent = title;
+    th.scope = "col";
+    header.append(th);
+  }
+  const head = document.createElement("thead");
+  head.append(header);
+  table.append(head);
+  const body = document.createElement("tbody");
+  for (const cycle of data.cycles)
+    for (const a of cycle.agents) {
+      const row = document.createElement("tr");
+      for (const value of [
+        cycle.cycleIndex,
+        `${cycle.status} / ${cycle.tick}`,
+        a.agentId,
+        a.decisions,
+        a.failures,
+        a.cancelled,
+        a.toolCalls,
+        (a.decisionTimeMs / 1000).toFixed(1),
+        a.discoveries,
+        a.revisits,
+        a.observationCells,
+        a.messagesSent,
+        a.sharedObjects,
+        a.movesToMemoryTargets,
+        `${a.verifiedLocations} / ${a.contradictedLocations}`,
+      ]) {
+        const cell = document.createElement("td");
+        cell.textContent = String(value);
+        row.append(cell);
+      }
+      body.append(row);
+    }
+  table.append(body);
+  el("experiment-errors").textContent =
+    data.simulation.cycleError ??
+    "Gebruiksregistratie telt pogingen, tools en beslistijd; tokenkosten zijn niet beschikbaar. Acties staan in Timeline; beslisfouten en brongegevens in de Decision Inspector.";
+}
+let historyCursor = 0;
+let historyGeneration = 0;
+async function loadTimelineCycles() {
+  const run = simulationId;
+  const cycles: { id: string; cycleIndex: number }[] = await request(
+    `/simulations/${run}/replays`,
+  );
+  if (run !== simulationId) return;
+  const previous = select("timeline-cycle").value;
+  select("timeline-cycle").replaceChildren(
+    ...cycles.map((c) => {
+      const option = document.createElement("option");
+      option.value = c.id;
+      option.textContent = `Cyclus ${c.cycleIndex}`;
+      return option;
+    }),
+  );
+  select("timeline-cycle").value = cycles.some((c) => c.id === previous)
+    ? previous
+    : (cycles.at(-1)?.id ?? "");
+  await loadTimeline(true);
+}
+async function loadTimeline(reset = false) {
+  const run = simulationId;
+  const cycle = select("timeline-cycle").value;
+  if (!cycle) return;
+  const generation = ++historyGeneration;
+  if (reset) {
+    historyCursor = 0;
+    el("history-events").replaceChildren();
+  }
+  const result: { events: WorldEvent[]; nextCursor: number } = await request(
+    `/simulations/${run}/timeline?cycleId=${encodeURIComponent(cycle)}&after=${historyCursor}`,
+  );
+  if (
+    run !== simulationId ||
+    cycle !== select("timeline-cycle").value ||
+    generation !== historyGeneration
+  )
+    return;
+  for (const event of result.events) {
+    const item = document.createElement("li");
+    item.textContent = `${event.tick} · ${event.actorId} · ${event.message}${event.targetId ? " · " + event.targetId : ""}`;
+    el("history-events").append(item);
+  }
+  historyCursor = result.nextCursor;
+  button("timeline-more").disabled = result.events.length < 200;
+}
+button("results-refresh").addEventListener(
+  "click",
+  () => void control(loadResults),
+);
+button("timeline-refresh").addEventListener(
+  "click",
+  () => void control(loadTimelineCycles),
+);
+button("timeline-more").addEventListener(
+  "click",
+  () => void control(() => loadTimeline()),
+);
+select("timeline-cycle").addEventListener(
+  "change",
+  () => void control(() => loadTimeline(true)),
+);

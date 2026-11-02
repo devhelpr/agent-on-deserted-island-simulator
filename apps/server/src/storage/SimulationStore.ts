@@ -1,3 +1,4 @@
+import { experimentMetrics, timeline } from "./experimentMetrics.js";
 import { ReplayLog } from "../replay/ReplayLog.js";
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
@@ -299,6 +300,12 @@ export class SimulationStore {
           .get()!.definition;
         return { run, cycle, definition };
       });
+  }
+  metrics(runId: string) {
+    return experimentMetrics(this.sqlite, runId);
+  }
+  timeline(cycleId: string, after: number) {
+    return timeline(this.sqlite, cycleId, after);
   }
   close() {
     this.sqlite.close();

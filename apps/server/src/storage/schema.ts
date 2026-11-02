@@ -7,6 +7,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import type {
   AgentMemory,
+  ExperimentConfig,
   AgentSessionStatus,
   DecisionRecord,
   WorldDefinition,
@@ -23,7 +24,11 @@ export const runs = sqliteTable("simulation_runs", {
     .notNull()
     .references(() => worlds.id),
   configuration: text({ mode: "json" })
-    .$type<{ controller: "scripted" | "codex"; codexAgentIds: string[] }>()
+    .$type<{
+      controller: "scripted" | "codex";
+      codexAgentIds: string[];
+      experiment?: ExperimentConfig;
+    }>()
     .notNull(),
   status: text().notNull(),
   timeScale: integer().notNull(),

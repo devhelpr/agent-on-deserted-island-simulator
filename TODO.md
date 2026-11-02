@@ -73,15 +73,15 @@ Acceptatie gehaald: volledige 72.000-tickcyclus terugspoelen met exact gelijke h
 
 ## Fase 6 / Sprint 6 — Multi-agent experimenten
 
-- [ ] S6.1 Drie autonome Codex-agents met eigen threads en geheugens laten samenwerken.
-- [ ] S6.2 Communicatiebereik, berichten en gedeelde objectinteracties vastleggen.
-- [ ] S6.3 Experimentconfiguratie voor meerdere cycli met vaste seed en begrensde beslisbudgetten.
-- [ ] S6.4 Gebruiksregistratie, voortgang, fouten en experimentresultaten zichtbaar maken.
-- [ ] S6.5 Live/Timeline/Memory/Replay en vergelijking tussen cycli afronden.
-- [ ] S6.6 Metrics voor ontdekkingen, herbezoeken, samenwerking en betrouwbaarheid van geheugen.
-- [ ] S6.7 Onbewaakte duurtest: volledige eerste cyclus, reset en aantoonbaar geheugengebruik in cyclus twee.
+- [x] S6.1 Drie autonome Codex-agents met eigen threads en geheugens laten samenwerken.
+- [x] S6.2 Communicatiebereik, berichten en gedeelde objectinteracties vastleggen.
+- [x] S6.3 Experimentconfiguratie voor meerdere cycli met vaste seed en begrensde beslisbudgetten.
+- [x] S6.4 Gebruiksregistratie, voortgang, fouten en experimentresultaten zichtbaar maken.
+- [x] S6.5 Live/Timeline/Memory/Replay en vergelijking tussen cycli afronden.
+- [x] S6.6 Metrics voor ontdekkingen, herbezoeken, samenwerking en betrouwbaarheid van geheugen.
+- [x] S6.7 Onbewaakte duurtest: volledige eerste cyclus, reset en aantoonbaar geheugengebruik in cyclus twee.
 
-Acceptatie: een experiment met meerdere cycli draait zonder toezicht en heeft een navolgbare geschiedenis van acties, ontdekkingen en herinneringen.
+Acceptatie gehaald: een deterministische duurtest rondt twee volledige cycli af. Drie echte Codex-agents doorliepen een volledige eerste cyclus en reset; alle drie gebruikten in cyclus twee aantoonbaar opgeslagen geheugendoelen. Zie het [acceptatieverslag mijlpaal 6](docs/sprint-6-acceptance.md) en de [live resultaten](docs/sprint-6-live-result.json).
 
 ## Buiten V1
 

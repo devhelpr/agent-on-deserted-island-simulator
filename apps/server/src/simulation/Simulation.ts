@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import {
   CYCLE_TICKS,
   type SchedulerMode,
+  type ExperimentConfig,
   type WorldDefinition,
   type WorldSnapshot,
   type DecisionRecord,
@@ -26,6 +27,7 @@ import { cycles } from "../storage/schema.js";
 import { SimulationClock } from "./SimulationClock.js";
 export interface AgentRuntimeOptions {
   controller?: "scripted" | "codex";
+  experiment?: ExperimentConfig;
   codexAgentIds?: string[];
   adapter?: CodexAdapter;
   store?: SimulationStore;
@@ -46,7 +48,8 @@ export class Simulation {
   readonly journal = new DecisionJournal();
   cycleIndex: number;
   cycleId: string;
-  cycleStatus: "active" | "closing" = "active";
+  cycleStatus: "active" | "closing" | "completed" = "active";
+  private readonly decisionsUsed: Record<string, number> = {};
   cycleError?: string;
   private resetting: Promise<void> | null = null;
   private stopped: Promise<void> | null = null;
@@ -70,9 +73,17 @@ export class Simulation {
     if (options.restore) {
       this.engine.restore(options.restore.checkpoint);
       this.cycleStatus =
-        options.restore.cycleStatus === "closing" ? "closing" : "active";
+        options.restore.cycleStatus === "completed"
+          ? "completed"
+          : options.restore.cycleStatus === "closing"
+            ? "closing"
+            : "active";
       // Recovery requires operator resume and starts fresh model threads.
-      if (options.restore.status === "stopped") this.clock.stop();
+      if (
+        options.restore.status === "stopped" ||
+        this.cycleStatus === "completed"
+      )
+        this.clock.stop();
       else this.clock.pause();
       for (const record of options
         .store!.listDecisions(id, "alpha")
@@ -97,12 +108,18 @@ export class Simulation {
           {
             controller: options.controller ?? "scripted",
             codexAgentIds: options.codexAgentIds ?? ["alpha"],
+            experiment: options.experiment,
           },
           this.status(),
         );
         options.store!.createCycle(id, this.cycleIndex, this.engine);
       });
     }
+    if (options.store)
+      for (const agent of this.engine.getAgents())
+        this.decisionsUsed[agent.id] = options.store
+          .listDecisions(id, agent.id)
+          .filter((r) => r.cycleId === this.cycleId).length;
     this.attachEngine();
     this.configureScheduler();
     this.journal.setListener((record) => this.saveDecision(record));
@@ -132,6 +149,9 @@ export class Simulation {
     const codexIds = new Set(this.options.codexAgentIds ?? ["alpha"]);
     const policy: DecisionPolicy = (observation, signal) => {
       const cycleId = this.cycleId;
+      this.decisionsUsed[observation.agentId] =
+        (this.decisionsUsed[observation.agentId] ?? 0) + 1;
+      const started = performance.now();
       const save = (record: DecisionRecord) =>
         this.options.store?.saveDecision(cycleId, record);
       if (this.memory)
@@ -147,6 +167,7 @@ export class Simulation {
       ): PolicyProposal => {
         const proposal = "action" in output ? output : { action: output };
         if (record) {
+          record.durationMs = performance.now() - started;
           record.action = proposal.action;
           record.status = signal?.aborted ? "cancelled" : "proposed";
           save(record);
@@ -201,6 +222,7 @@ export class Simulation {
                 if (record) {
                   record.status = signal?.aborted ? "cancelled" : "failed";
                   removeAbort();
+                  record.durationMs = performance.now() - started;
                   record.error = String(error);
                   save(record);
                 }
@@ -212,6 +234,7 @@ export class Simulation {
         removeAbort();
         if (record) {
           record.status = signal?.aborted ? "cancelled" : "failed";
+          record.durationMs = performance.now() - started;
           record.error = String(error);
           save(record);
         }
@@ -220,7 +243,15 @@ export class Simulation {
     };
     this.scheduler =
       this.codex || scripted
-        ? new AgentScheduler(this.engine, policy, this.codex ? 90000 : 10000)
+        ? new AgentScheduler(
+            this.engine,
+            policy,
+            this.codex ? 90000 : 10000,
+            (id) =>
+              !this.options.experiment ||
+              (this.decisionsUsed[id] ?? 0) <
+                this.options.experiment.decisionBudgetPerAgentPerCycle,
+          )
         : null;
   }
   persist() {
@@ -233,7 +264,7 @@ export class Simulation {
   }
   advance(now: number) {
     this.clock.pump(now, () => {
-      if (this.cycleStatus === "closing") return false;
+      if (this.cycleStatus !== "active") return false;
       if (this.engine.getTick() >= CYCLE_TICKS) return false;
       if (this.scheduler && !this.scheduler.prepare(this.clock.schedulerMode))
         return false;
@@ -244,7 +275,8 @@ export class Simulation {
       this.engine.getTick() >= CYCLE_TICKS &&
       !this.resetting &&
       !this.cycleError &&
-      !this.stopped
+      !this.stopped &&
+      this.cycleStatus !== "completed"
     )
       void this.reset().catch(() => {});
   }
@@ -258,6 +290,20 @@ export class Simulation {
     state.cycleIndex = this.cycleIndex;
     state.cycleStatus = this.cycleStatus;
     state.cycleError = this.cycleError;
+    if (this.options.experiment)
+      state.experiment = {
+        ...this.options.experiment,
+        decisionsUsed: { ...this.decisionsUsed },
+        exhaustedAgents: this.engine
+          .getAgents()
+          .filter(
+            (a) =>
+              (this.decisionsUsed[a.id] ?? 0) >=
+              this.options.experiment!.decisionBudgetPerAgentPerCycle,
+          )
+          .map((a) => a.id),
+        completed: this.cycleStatus === "completed",
+      };
     const sessions = this.codex?.statuses() ?? [];
     state.agentSessions = this.engine.getAgents().map(
       (a) =>
@@ -292,6 +338,9 @@ export class Simulation {
       this.engine.cancelAll();
       this.persist();
       await this.codex?.resetCycle();
+      const finished =
+        !!this.options.experiment &&
+        this.cycleIndex >= this.options.experiment.maxCycles;
       const next = this.newEngine();
       const complete = () => {
         this.options.store?.snapshot(closing, "final", this.engine);
@@ -299,13 +348,29 @@ export class Simulation {
           this.memory?.consolidate(closing, agent.id);
         this.options.store?.db
           .update(cycles)
-          .set({ status: "completed", outcome: "reset" })
+          .set({
+            status: "completed",
+            outcome:
+              this.engine.getTick() >= CYCLE_TICKS
+                ? "duration"
+                : "manual_reset",
+          })
           .where(eq(cycles.id, closing))
           .run();
-        this.options.store?.createCycle(this.id, this.cycleIndex + 1, next);
+        if (!finished)
+          this.options.store?.createCycle(this.id, this.cycleIndex + 1, next);
       };
       if (this.options.store) this.options.store.transaction(complete);
       else complete();
+      if (finished) {
+        this.cycleStatus = "completed";
+        this.clock.stop();
+        await this.codex?.close();
+        this.persist();
+        return;
+      }
+      for (const id of Object.keys(this.decisionsUsed))
+        this.decisionsUsed[id] = 0;
       this.journal.clear();
       this.engine = next;
       this.cycleIndex++;

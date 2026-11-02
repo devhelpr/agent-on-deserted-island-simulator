@@ -15,7 +15,8 @@
     "test": "vitest run",
     "build": "npm run build --workspaces --if-present",
     "format": "prettier --write \"apps/**/*.{ts,css,html,json}\" \"packages/**/*.{ts,json}\" \"scripts/**/*.{ts,json}\" package.json tsconfig.json",
-    "verify:codex": "tsx scripts/verify-codex.ts"
+    "verify:codex": "tsx scripts/verify-codex.ts",
+    "verify:experiment": "tsx scripts/verify-experiment.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

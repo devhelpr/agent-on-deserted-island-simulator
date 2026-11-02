@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { AgentObservation } from "../../../../packages/shared/src/index.js";
 import { CodexAdapter } from "./CodexAdapter.js";
 import type { RpcMessage, RpcTransport } from "./codex/AppServerRpc.js";
+import { Simulation } from "../simulation/Simulation.js";
+import { SimulationStore } from "../storage/SimulationStore.js";
+import { flatWorld, entity } from "../world/testFixtures.js";
 import { ISLAND_CONFIG } from "./codex/IsolatedRuntime.js";
 const observation = (id = "alpha"): AgentObservation => ({
   tick: 0,
@@ -277,6 +280,54 @@ describe("Codex decisions", () => {
       ).toBeDefined();
     } finally {
       await adapter.close();
+    }
+  });
+  it("finishes the last budgeted turn for all three agents and renews isolated threads after reset", async () => {
+    const { rpc, adapter } = setup();
+    const store = new SimulationStore();
+    const sim = new Simulation("three", 0, 1, "experiment", undefined, {
+      adapter,
+      store,
+      controller: "codex",
+      codexAgentIds: ["alpha", "beta", "gamma"],
+      definition: flatWorld([entity("cave", "cave", -20, 5)]),
+      experiment: { maxCycles: 2, decisionBudgetPerAgentPerCycle: 1 },
+    });
+    const settle = async () => {
+      for (let i = 0; i < 100 && sim.scheduler!.pendingAgents().length; i++)
+        await new Promise((done) => setTimeout(done, 1));
+    };
+    try {
+      sim.advance(50);
+      sim.advance(100); // Preparing again must retain budgeted in-flight decisions.
+      await settle();
+      sim.advance(150);
+      expect(rpc.threads).toBe(3);
+      expect(new Set(adapter.statuses().map((s) => s.threadId)).size).toBe(3);
+      for (const id of ["alpha", "beta", "gamma"]) {
+        const records = store.listDecisions(sim.id, id);
+        expect(records).toHaveLength(1);
+        expect(records[0]!.status).toBe("submitted");
+      }
+      await sim.reset();
+      sim.advance(200);
+      await settle();
+      sim.advance(250);
+      expect(rpc.threads).toBe(6);
+      for (const id of ["alpha", "beta", "gamma"]) {
+        const records = store.listDecisions(sim.id, id);
+        expect(records).toHaveLength(2);
+        expect(records[1]!.threadId).not.toBe(records[0]!.threadId);
+        expect(
+          records[1]!.observation.memory!.relevant.every(
+            (m) => m.agentId === id,
+          ),
+        ).toBe(true);
+        expect(records[1]!.status).toBe("submitted");
+      }
+    } finally {
+      await sim.shutdown();
+      store.close();
     }
   });
   it("locks out host capabilities in the isolated config", () => {

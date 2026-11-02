@@ -1,6 +1,6 @@
 # Agent Island
 
-A local-first simulation platform in TypeScript. Milestone 5 adds exact historical replay, agent POV, a Decision Inspector, and a discovery map. Durable memory, crash recovery, and recurring cycles are included. Real Codex agents use an identity-bound MCP runtime. The foundation provides a deterministic 3D island with three scripted agents, an adjustable simulation clock, navigation, and shared object interactions. Hono and the World Engine manage the world; Socket.IO sends state to the Vite/Three.js viewer. Codex is optional; the default run uses scripted agents.
+A local-first simulation platform in TypeScript. Milestone 6 adds bounded multi-cycle experiments, three autonomous Codex agents, durable usage accounting, and cycle comparisons. Exact historical replay, agent POV, a Decision Inspector, and a discovery map are included. Durable memory, crash recovery, and recurring cycles are included. Real Codex agents use an identity-bound MCP runtime. The foundation provides a deterministic 3D island with three scripted agents, an adjustable simulation clock, navigation, and shared object interactions. Hono and the World Engine manage the world; Socket.IO sends state to the Vite/Three.js viewer. Codex is optional; the default run uses scripted agents.
 
 ## Running locally
 
@@ -24,9 +24,25 @@ Open **http://127.0.0.1:5173**. The backend listens on **http://127.0.0.1:3001**
 
 ## Starting a real Codex agent
 
-Make sure the Codex CLI is available and `codex login` has been completed. Select **Codex Alpha + 2 scripted** under **New run with** (**Nieuwe run met**) in the dashboard. Each Codex agent gets its own thread, filtered observations, and world actions through a restricted MCP session. Model status and public decisions are visible in the dashboard.
+Make sure the Codex CLI is available and `codex login` has been completed. Select **3 autonome Codex-agents** under **Nieuwe run met** in the dashboard for three independent agents, or **Codex Alpha + 2 scripted** for a mixed run. Set the number of cycles and the decision budget per agent per cycle before creating the run. Each Codex agent gets its own thread, filtered observations, and world actions through a restricted MCP session. Model status and public decisions are visible in the dashboard.
 
 The live acceptance test ran for 15 minutes of simulation time, with 13 model decisions and 10 successful moves. Details and a repeatable test command are available in the [Codex runtime guide](docs/codex-runtime.md) and the [milestone 3 acceptance report](docs/sprint-3-acceptance.md).
+
+## Multi-agent experiments
+
+New dashboard runs default to **2 cycles** and **120 decision attempts per agent per cycle**. Each cycle retains the same world definition and seed, lasts 72,000 ticks, and starts fresh agent threads with each agent's own consolidated memory. The final cycle is consolidated and retained for replay, then the experiment stops without creating another cycle. Manual reset also closes and counts a cycle; the stored outcome distinguishes it from a full-duration cycle.
+
+Budget checks happen before starting a decision. Failed and cancelled attempts consume budget; fallback waits do not start additional model calls. An already started final decision may finish. Exhausted agents stop deciding while the world and other agents continue, allowing the experiment to reach its cycle boundary unattended. Budgets survive server recovery. Runs created without `experiment` in the API keep their existing unlimited cycle lifecycle.
+
+The **Experiment** tab compares unique observed objects, objects seen in earlier cycles by the same agent, 25 m observation cells sampled at decisions, explicit delivered messages, successfully shared object interactions, decision/tool counts, errors, cancellations, and decision wall time. Successful moves to a supplied earlier memory target are recorded as evidence of memory use, not as proof of model reasoning. Location checks compare a retrieved memory's source observation with a newly visible object (10 cm tolerance); unverified claims remain unknown and moved objects may contradict old locations. Automatic greetings are separate from explicit cooperation. Token costs are not available; usage is measured in attempts, tool calls, and time.
+
+**Timeline** reads the durable, paginated event history per cycle. **Memory** and **Replay** retain their agent isolation and historical views. Communication requires a visible recipient within 25 m and the 120° view cone, with occlusion checks. Delivered message text and recipient are recorded; only sender and recipient get the speech event in their observations. The human timeline can inspect all speech. Shared object ownership continues to be validated atomically by the World Engine.
+
+```sh
+npm run verify:experiment
+```
+
+This optional black-box test uses the existing Codex login, runs three real agents through the full first cycle and stops after all three demonstrate memory use after the automatic reset, at requested 20× speed, and permits at most **48 model decision attempts** (8 per agent per cycle). It writes `docs/sprint-6-live-result.json` and exits unsuccessfully if the first full cycle, fresh threads, successful decisions, or demonstrated memory-target movement by any agent are missing. Completion of two full cycles and terminal experiment stopping are covered by the deterministic suite. Stop with Ctrl+C. The deterministic test suite also runs two full cycles without model costs. See [milestone 6 acceptance](docs/sprint-6-acceptance.md).
 
 ## Checking and building
 
@@ -90,6 +106,8 @@ Perception-based consolidation is deterministic and makes no additional model ca
 | GET | `/api/simulations/:id/agents` | Agents |
 | GET | `/api/simulations/:id/replays` | Recorded cycles and available tick ranges |
 | GET | `/api/simulations/:id/replays/:cycleId?tick=1200&agentId=alpha` | Verified historical state, optional agent POV, decisions, and discovered objects |
+| GET | `/api/simulations/:id/results` | Experiment progress and per-agent metrics for every cycle |
+| GET | `/api/simulations/:id/timeline?cycleId=...&after=0` | Up to 200 durable events after a sequence cursor, scoped to the run |
 | POST | `/api/simulations/:id/pause`, `/resume`, `/stop` | Control a run |
 | PATCH | `/api/simulations/:id/speed` | `{ "timeScale": 1/2/5/10/20 }` |
 | PATCH | `/api/simulations/:id/mode` | `{ "schedulerMode": "live"/"experiment" }` |
@@ -102,7 +120,7 @@ Perception-based consolidation is deterministic and makes no additional model ca
 | GET | `/api/simulations/:id/actions/:actionId` | Action result |
 | POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Cancel a pending action |
 
-A new run optionally accepts `worldId: "island-48291-v3"` (the legacy `"island-48291"` value remains accepted as an alias), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
+A new run optionally accepts `worldId: "island-48291-v3"` (the legacy `"island-48291"` value remains accepted as an alias), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). Pass `codexAgentIds: ["alpha", "beta", "gamma"]` for three Codex agents and `experiment: { "maxCycles": 2, "decisionBudgetPerAgentPerCycle": 120 }` to bound the experiment (1–100 cycles, 1–10,000 attempts per agent per cycle). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
 
 Socket.IO sends `world:snapshot` on connection, reconnection, and subscription. `simulation:subscribe(id, ack)` switches rooms. `world:delta` contains `{ simulationId, state }`, and `simulation:state` contains clock status. Both are sent at most 10 times per real second, regardless of acceleration. Control changes also trigger an immediate status event. The viewer interpolates between positions. In this version, a delta contains the complete current entity list and bounded recent actions/events; further delta compression is future work.
 
