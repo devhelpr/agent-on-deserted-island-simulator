@@ -1,5 +1,6 @@
 import {
   actionSchema,
+  actionExplanationSchema,
   AGENT_RADIUS,
   distance,
   entityRadius,
@@ -188,10 +189,17 @@ export class WorldEngine {
     const a = this.actions.get(id);
     return a ? structuredClone(a) : undefined;
   }
-  submitAction(agentId: string, input: unknown): ActionSubmission {
+  submitAction(
+    agentId: string,
+    input: unknown,
+    explanation: unknown = {},
+  ): ActionSubmission {
     if (!this.accepting) return { accepted: false, error: "CYCLE_CLOSING" };
     if (this.commit && !this.mutating)
-      return this.mutate(() => this.submitAction(agentId, input));
+      return this.mutate(() => this.submitAction(agentId, input, explanation));
+    const details = actionExplanationSchema.safeParse(explanation);
+    if (!details.success)
+      return { accepted: false, error: "INVALID_EXPLANATION" };
     const parsed = actionSchema.safeParse(input);
     if (!parsed.success) return { accepted: false, error: "INVALID_ACTION" };
     const agent = this.agents.get(agentId);
@@ -203,6 +211,7 @@ export class WorldEngine {
       input: parsed.data,
       status: "queued",
       submittedAtTick: this.tick,
+      ...structuredClone(details.data),
     };
     this.actions.set(action.id, action);
     this.lastActions.set(agentId, action.id);
@@ -240,7 +249,10 @@ export class WorldEngine {
     }
   }
   private event(
-    action: Pick<ActionRecord, "agentId"> & Partial<Pick<ActionRecord, "id">>,
+    action: Pick<ActionRecord, "agentId"> &
+      Partial<
+        Pick<ActionRecord, "id" | "motivation" | "artifactConsiderations">
+      >,
     type: string,
     message: string,
     targetId?: string,
@@ -255,6 +267,8 @@ export class WorldEngine {
       targetId,
       position: { ...agent.position },
       message,
+      motivation: action.motivation,
+      artifactConsiderations: structuredClone(action.artifactConsiderations),
     };
     this.events.push(event);
     if (this.events.length > 200) this.events.shift();

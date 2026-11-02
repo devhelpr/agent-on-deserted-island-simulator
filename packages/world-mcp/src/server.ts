@@ -4,6 +4,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import {
   vectorSchema,
+  artifactConsiderationSchema,
+  type ActionExplanation,
   type AgentObservation,
   type WorldActionInput,
 } from "../../shared/src/index.js";
@@ -16,7 +18,16 @@ const motivation = z
     "Brief public reason for the chosen action; do not include private reasoning.",
   );
 const entityId = z.string().min(1).max(80);
-const reason = { motivation };
+const reason = {
+  motivation,
+  artifactConsiderations: z
+    .array(artifactConsiderationSchema)
+    .max(8)
+    .optional()
+    .describe(
+      "Brief public assessments of visible artifacts: why collect, approach, keep, defer or leave each one. No private reasoning.",
+    ),
+};
 export const worldTools = [
   {
     name: "world_observe",
@@ -49,7 +60,7 @@ export const worldTools = [
   {
     name: "world_pickup",
     description:
-      "Propose picking up a nearby visible portable artifact or movable rock. Capacity is one object.",
+      "Collect a free portable artifact to carry and study it. Check observed pickup eligibility and distance; approach first when OUT_OF_RANGE. Capacity is one object. Explain why you choose this find or leave alternatives.",
     schema: z.strictObject({ entityId, ...reason }),
   },
   {
@@ -95,7 +106,9 @@ export interface ToolTrace {
 }
 export interface WorldToolSession {
   client: Client;
-  proposed(): { action: WorldActionInput; motivation: string } | null;
+  proposed():
+    | ({ action: WorldActionInput; motivation: string } & ActionExplanation)
+    | null;
   call(
     name: string,
     args: Record<string, unknown>,
@@ -111,7 +124,9 @@ export async function createWorldToolSession(
   trace: (entry: ToolTrace) => void = () => {},
 ): Promise<WorldToolSession> {
   const frozen = structuredClone(observation);
-  let proposal: { action: WorldActionInput; motivation: string } | null = null;
+  let proposal:
+    | ({ action: WorldActionInput; motivation: string } & ActionExplanation)
+    | null = null;
   let closed = false;
   const server = new McpServer({
     name: "agent-island-world",
@@ -142,16 +157,23 @@ export async function createWorldToolSession(
       !frozen.visibleAgents.some((a) => a.id === values.recipientId)
     )
       return { success: false, error: "RECIPIENT_NOT_VISIBLE" };
-    const { motivation: explanation, ...input } = parsed.data as Record<
-      string,
-      unknown
-    >;
+    const {
+      motivation: explanation,
+      artifactConsiderations,
+      ...input
+    } = parsed.data as Record<string, unknown>;
     proposal = {
       action: {
         type: name.slice("world_".length),
         ...input,
       } as WorldActionInput,
       motivation: explanation as string,
+      ...(artifactConsiderations
+        ? {
+            artifactConsiderations:
+              artifactConsiderations as ActionExplanation["artifactConsiderations"],
+          }
+        : {}),
     };
     return {
       success: true,

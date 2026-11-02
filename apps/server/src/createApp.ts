@@ -105,15 +105,6 @@ export function createApp(
       await c.req.json().catch(() => null),
     );
     if (!input.success) return c.json({ error: "INVALID_CONFIGURATION" }, 400);
-    if (simulations.size >= 8)
-      return c.json(
-        {
-          error: "SIMULATION_LIMIT",
-          message:
-            "Maximaal 8 opgeslagen runs; kies een andere database voor een nieuw experiment.",
-        },
-        409,
-      );
     const simulation = makeSimulation(
       input.data.timeScale,
       input.data.schedulerMode,
@@ -246,10 +237,17 @@ export function createApp(
     const simulation = simulations.get(c.req.param("id"))!;
     if (!simulation.engine.observe(c.req.param("agentId")))
       return c.json({ error: "AGENT_NOT_FOUND" }, 404);
-    const decisions = store.listDecisions(
-      simulation.id,
-      c.req.param("agentId"),
-    );
+    const limit =
+      c.req.query("limit") === undefined
+        ? undefined
+        : Number(c.req.query("limit"));
+    if (
+      limit !== undefined &&
+      (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+    )
+      return c.json({ error: "INVALID_LIMIT" }, 400);
+    const all = store.listDecisions(simulation.id, c.req.param("agentId"));
+    const decisions = limit === undefined ? all : all.slice(-limit);
     return c.json(
       decisions.map((record) => ({
         ...record,

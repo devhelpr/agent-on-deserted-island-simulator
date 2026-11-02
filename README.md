@@ -18,8 +18,9 @@ Open **http://127.0.0.1:5173**. The backend listens on **http://127.0.0.1:3001**
 - Each cycle lasts 72,000 ticks (one virtual hour). **Reset cycle** (**Cyclus resetten**) restores the initial world and preserves each agent's own memory. The **Memory** (**Geheugen**) tab shows sources, confidence, importance, revisions, and text search results for each agent.
 - Stopping a run is permanent; **New run** (**Nieuwe run**) creates an independent experiment. The run selector switches the live connection to the correct Socket.IO room.
 - View the selected agent's observation or cancel its action. A scripted agent chooses another action on the next tick.
-- The timeline shows recent results, greetings, and errors; inventories and carried objects reflect server state.
+- Live actions and decisions show the chosen action, public motivation, per-artifact reasons to collect or defer, and the separate execution result. Decisions refresh automatically every two seconds; expand an entry to inspect its observation and tool trace. Agent cards show the current intent and named inventory. The historical Timeline and Replay retain these explanations.
 - Open **Replay**, choose a cycle, and drag the timeline or play at 1×–20×. Choose **Alpha/Beta/Gamma POV** to see that agent's historical view, discovered object locations, and recorded decisions. Live simulation controls are disabled while viewing history; the run continues independently.
+- Scripted agents now collect a free portable artifact first, inspect and activate it while carrying, move at least 12 m, and retain it for at least 20 simulation seconds before deliberately placing it. They avoid collecting ordinary rocks and repeatedly picking up their own displayed finds. Failed routes receive a short retry cooldown rather than a permanent blacklist. Codex agents receive the same research goal and report their public artifact assessments. See [artifact behavior and validation](docs/artifact-behavior.md).
 - Portable artifacts now include glowing crystals, golden shells, and ancient relics, with distinct shapes, colors, and ground rings. Three are placed near the starting area. Agents can pick up, carry, drop, inspect, or activate them. Agents greet visible neighbors within 10 m once per encounter; separating beyond 15 m allows another greeting.
 
 ## Starting a real Codex agent
@@ -89,7 +90,7 @@ Perception uses a horizontal range of 25 m, a 120° field of view, and 2D occlus
 
 ## API
 
-The default run is `sim-001`. The server stores at most 8 runs in `apps/server/data/agent-island.sqlite` when using `npm run dev` or `npm start -w @agent-island/server`. Set `AGENT_ISLAND_DB` to an absolute path to use another database. Migrations are applied automatically; `npm run db:generate -w @agent-island/server` generates future schema migrations. The `createApp()` test factory uses an independent in-memory SQLite database by default.
+The default run is `sim-001`. The server stores runs in `apps/server/data/agent-island.sqlite` when using `npm run dev` or `npm start -w @agent-island/server`. Saved runs do not impose a fixed limit on creating new experiments; their histories remain available. Set `AGENT_ISLAND_DB` to an absolute path to use another database. Migrations are applied automatically; `npm run db:generate -w @agent-island/server` generates future schema migrations. The `createApp()` test factory uses an independent in-memory SQLite database by default.
 
 After a restart, existing runs are restored in a paused state, including positions, object ownership, routes, wait durations, actions, decisions, and memory. Click **Resume** (**Hervatten**) to continue. A run that was already stopped remains stopped. Interrupted model decisions are cancelled; Codex starts with a new thread and the agent's own memory. A crash during cycle closing leaves that cycle blocked for actions; resuming or resetting retries the transactional closing procedure.
 

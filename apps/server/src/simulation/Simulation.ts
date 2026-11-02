@@ -169,11 +169,17 @@ export class Simulation {
         if (record) {
           record.durationMs = performance.now() - started;
           record.action = proposal.action;
+          record.motivation = proposal.motivation ?? record.motivation;
+          record.artifactConsiderations =
+            proposal.artifactConsiderations ?? record.artifactConsiderations;
           record.status = signal?.aborted ? "cancelled" : "proposed";
           save(record);
         }
         return {
           action: proposal.action,
+          motivation: proposal.motivation ?? record?.motivation,
+          artifactConsiderations:
+            proposal.artifactConsiderations ?? record?.artifactConsiderations,
           onSubmitted: (result) => {
             proposal.onSubmitted?.(result);
             if (record) {
@@ -197,7 +203,7 @@ export class Simulation {
       if (this.codex && codexIds.has(observation.agentId))
         return this.codex
           .decide(observation, signal)
-          .then((d) => wrap({ action: d.action }, d.record));
+          .then((d) => wrap(d, d.record));
       // Keep scripted decisions synchronous for deterministic accelerated runs.
       const record = this.options.store
         ? this.journal.begin(observation)

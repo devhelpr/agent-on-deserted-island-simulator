@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-02T15:01:31.436Z",
+  "passed": true,
+  "controller": "real Codex Alpha",
+  "scope": "Nearby free portable artifact: autonomous pickup, public candidate assessment and matching action motivation",
+  "records": [
+    {
+      "tick": 0,
+      "action": {
+        "type": "pickup",
+        "entityId": "test-crystal"
+      },
+      "motivation": "The nearby free crystal is within pickup range; collecting it enables carrying and study.",
+      "artifactConsiderations": [
+        {
+          "entityId": "test-crystal",
+          "decision": "pickup",
+          "reason": "Portable, unowned, and eligible for pickup with empty carrying capacity."
+        }
+      ],
+      "outcome": "succeeded"
+    }
+  ],
+  "decisionAttempts": 2
+}

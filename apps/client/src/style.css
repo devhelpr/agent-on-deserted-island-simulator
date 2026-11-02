@@ -852,3 +852,30 @@ select:focus-visible {
   font-size: 13px;
   line-height: 1.7;
 }
+
+.decision-motivation,
+.agent-intent {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.agent-intent:empty {
+  display: none;
+}
+.artifact-considerations {
+  padding-left: 18px;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+#decision-list pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  font-size: 11px;
+}
+.decision-note {
+  font-size: 12px;
+  line-height: 1.6;
+}

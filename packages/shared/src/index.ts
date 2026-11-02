@@ -76,7 +76,29 @@ export const actionSchema = z.discriminatedUnion("type", [
 export type WorldActionInput = z.infer<typeof actionSchema>;
 export type ActionStatus =
   "queued" | "running" | "succeeded" | "failed" | "cancelled";
-export interface ActionRecord {
+export const artifactConsiderationSchema = z.strictObject({
+  entityId: z.string().min(1).max(80),
+  decision: z.enum([
+    "pickup",
+    "approach",
+    "keep",
+    "defer",
+    "leave",
+    "inspect",
+    "place",
+  ]),
+  reason: z.string().min(1).max(300),
+});
+export type ArtifactConsideration = z.infer<typeof artifactConsiderationSchema>;
+export const actionExplanationSchema = z.strictObject({
+  motivation: z.string().min(1).max(500).optional(),
+  artifactConsiderations: z
+    .array(artifactConsiderationSchema)
+    .max(8)
+    .optional(),
+});
+export type ActionExplanation = z.infer<typeof actionExplanationSchema>;
+export interface ActionRecord extends ActionExplanation {
   id: string;
   agentId: string;
   input: WorldActionInput;
@@ -87,7 +109,7 @@ export interface ActionRecord {
   error?: string;
   result?: unknown;
 }
-export interface WorldEvent {
+export interface WorldEvent extends ActionExplanation {
   sequence: number;
   tick: number;
   type: string;
@@ -116,6 +138,16 @@ export interface AgentObservation {
     kind?: WorldEntity["kind"];
     label?: string;
     movable?: boolean;
+    pickup?: {
+      eligible: boolean;
+      blocker:
+        | "NOT_MOVABLE"
+        | "OBJECT_UNAVAILABLE"
+        | "INVENTORY_FULL"
+        | "OUT_OF_RANGE"
+        | null;
+      interactionDistance: number;
+    };
   }[];
   visibleAgents: { id: string; position: Vector3; distance: number }[];
   recentEvents: WorldEvent[];
@@ -204,7 +236,7 @@ export interface AgentSessionStatus {
   decisions: number;
   lastError?: string;
 }
-export interface DecisionRecord {
+export interface DecisionRecord extends ActionExplanation {
   id: string;
   agentId: string;
   tick: number;

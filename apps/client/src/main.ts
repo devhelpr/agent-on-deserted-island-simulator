@@ -10,6 +10,12 @@ import type {
   SimulationStatus,
   WorldStateDto,
 } from "../../../packages/shared/src/index.js";
+import {
+  actionTitle,
+  appendExplanation,
+  appendOutcome,
+  outcomeReason,
+} from "./dashboard/decisionPresentation";
 import { IslandScene } from "./world/IslandScene";
 import "./style.css";
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -24,7 +30,7 @@ app.innerHTML = `
 <section id="results-panel" hidden aria-label="Experimentresultaten"><h2>Vergelijking tussen cycli</h2><button id="results-refresh" type="button">Vernieuwen</button><p id="experiment-progress" role="status"></p><p>Herbezoeken: eerder waargenomen objecten. Samenwerking: geslaagde expliciete berichten en objecten waarmee meerdere agents succesvol interacteren. Geheugengebruik: geslaagde bewegingen naar aangeleverde geheugendoelen. Dit is een meetbare aanwijzing voor gebruik, geen bewijs van modelredenering.</p><p>Locatiecontrole vergelijkt opnieuw zichtbare objecten met bronwaarnemingen van opgehaalde herinneringen (tolerantie 10 cm). Verplaatste objecten kunnen afwijken. Geen controle betekent onbekend.</p><div class="results-scroll"><table id="experiment-results"></table></div><p id="experiment-errors"></p></section>
 <section id="replay-panel" hidden aria-label="Replay"><div class="simulation-controls"><label>Cyclus<select id="replay-cycle"></select></label><button id="replay-refresh" type="button">Vernieuwen</button><button id="replay-play" type="button">Afspelen</button><label>Afspeelsnelheid<select id="replay-speed"><option>1</option><option>2</option><option>5</option><option>10</option><option>20</option></select></label><label>Weergave<select id="replay-pov"><option value="">Vrije camera</option><option value="alpha">Alpha POV</option><option value="beta">Beta POV</option><option value="gamma">Gamma POV</option></select></label></div><label class="replay-seek">Tijdlijn<input id="replay-seek" type="range" min="0" max="0" value="0" step="1" /></label><p id="replay-info" role="status"></p><div class="replay-discovery"><canvas id="discovery-map" width="260" height="260" aria-label="Ontdekte objectlocaties op het eiland"></canvas><p id="discovery-info">Kies een agent POV om ontdekkingen tot dit tijdstip te bekijken.</p></div><h2>Decision Inspector</h2><p>Vastgelegde waarneming, geheugen, publieke motivatie, tools en resultaat.</p><div id="replay-decisions"></div></section>
 <section id="memory-panel" hidden aria-label="Agentgeheugen"><div class="memory-heading"><h2 id="memory-agent">Geheugen · Alpha</h2><span id="memory-cycle"></span></div><form id="memory-search"><label>Doorzoek herinneringen<input id="memory-query" type="search" maxlength="500" placeholder="Bijvoorbeeld cave of rock" /></label><button type="submit">Zoeken</button><button id="memory-refresh" type="button">Vernieuwen</button></form><p id="memory-summary"></p><p id="memory-goals"></p><ol id="memory-list"></ol></section>
-<div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><div class="simulation-controls"><label>Agentfilter voor recente acties<select id="event-agent"><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label></div><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Bekijk alle beslissingen of filter op een agent.</li></ol></div></div>
+<div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><div class="simulation-controls"><label>Agentfilter voor recente acties<select id="event-agent"><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label></div><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><p class="decision-note">Automatisch bijgewerkt · publieke motivaties en afwegingen, geen verborgen interne gedachten.</p><ol id="decision-list"><li>Bekijk alle beslissingen of filter op een agent.</li></ol></div></div>
 </section><aside><div class="panel-heading"><p class="eyebrow">IN HET VELD</p><h2>De verkenners<span>03</span></h2></div><div id="agents"></div>
 <div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><label>Agentfilter voor beslissingen<select id="decision-agent" disabled><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
 <div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents begroeten elkaar, onderzoeken objecten en verzamelen kristallen, schelpen en relikwieën. Eén object kan maar één eigenaar hebben.</p></div></div>
@@ -45,6 +51,8 @@ let selectedAgent = "alpha";
 let status: SimulationStatus | undefined;
 let state: WorldStateDto | undefined;
 let busy = false;
+let eventSignature = "";
+let decisionSignature = "";
 let replayActive = false;
 let liveSnapshot:
   import("../../../packages/shared/src/index.js").WorldSnapshot | undefined;
@@ -170,7 +178,7 @@ function update(next: WorldStateDto) {
       card.type = "button";
       card.id = `agent-${agent.id}`;
       card.className = `agent-card agent-${agent.id}`;
-      card.innerHTML = `<div class="agent-title"><span class="avatar"></span><span><strong></strong><small>Scripted testagent</small></span><span class="agent-arrow">↗</span></div><div class="agent-status"></div><div class="coordinates"><span>POSITIE · X / Y / Z</span><code></code></div><div class="agent-footer"></div>`;
+      card.innerHTML = `<div class="agent-title"><span class="avatar"></span><span><strong></strong><small>Scripted testagent</small></span><span class="agent-arrow">↗</span></div><div class="agent-status"></div><div class="coordinates"><span>POSITIE · X / Y / Z</span><code></code></div><div class="agent-footer"></div><p class="agent-intent"></p>`;
       card.querySelector("strong")!.textContent = agent.name;
       card.querySelector(".avatar")!.textContent = agent.name[0]!;
       const id = agent.id;
@@ -198,8 +206,11 @@ function update(next: WorldStateDto) {
       .map((n) => n.toFixed(1))
       .join(" / ");
     card.querySelector(".agent-footer")!.textContent = agent.inventory.length
-      ? `Draagt ${agent.inventory.join(", ")}`
+      ? `Draagt ${agent.inventory.map((id) => next.entities.find((e) => e.id === id)?.label ?? id).join(", ")}`
       : "Inventaris leeg · Bekijk van dichtbij ↗";
+    const current = next.actions.find((a) => a.id === agent.activeActionId);
+    card.querySelector(".agent-intent")!.textContent =
+      current?.motivation ?? "";
   }
   renderEvents(next);
   refreshControls();
@@ -211,14 +222,40 @@ function renderEvents(next: WorldStateDto) {
     .filter((event) => !agent || event.actorId === agent)
     .slice(-8)
     .reverse();
+  const signature = JSON.stringify({
+    simulationId,
+    agent,
+    events,
+    pending: next.actions.filter((a) =>
+      ["queued", "running"].includes(a.status),
+    ),
+  });
+  if (signature === eventSignature) return;
+  eventSignature = signature;
   list.replaceChildren();
+  for (const action of next.actions
+    .filter(
+      (a) =>
+        ["queued", "running"].includes(a.status) &&
+        (!agent || a.agentId === agent),
+    )
+    .slice(-3)) {
+    const li = document.createElement("li");
+    li.textContent = `${action.agentId} · ${actionTitle(action.input)}`;
+    appendExplanation(li, action);
+    appendOutcome(li, action);
+    list.append(li);
+  }
   for (const event of events) {
     const li = document.createElement("li");
     li.textContent = `${event.tick} · ${event.message}`;
     li.className = event.type.endsWith("failed") ? "event-failed" : "";
+    appendExplanation(li, event);
+    const outcome = next.actions.find((a) => a.id === event.actionId);
+    appendOutcome(li, outcome);
     list.append(li);
   }
-  if (!events.length) {
+  if (!list.childElementCount) {
     const li = document.createElement("li");
     li.textContent = agent
       ? "Geen recente acties voor deze agent."
@@ -284,6 +321,8 @@ function subscribe(id: string): Promise<void> {
     el("memory-summary").textContent = "";
     el("memory-goals").textContent = "";
     el("decision-list").replaceChildren();
+    decisionSignature = "";
+    eventSignature = "";
     // Update reconnect subscription as well as the current socket room.
     socket.io.opts.query = { simulationId: id };
     socket
@@ -524,6 +563,7 @@ button("observe").addEventListener(
         `Tick ${observation.tick} · ${observation.visibleEntities.length} objecten, ${observation.visibleAgents.length} agents zichtbaar. Bereik: 25 m / 120°. ${observation.visibleEntities.map((e: { id: string }) => e.id).join(", ") || "Geen objecten in beeld."}`;
     }),
 );
+let decisionLoading = false;
 async function loadDecisions() {
   const run = simulationId;
   const agent = select("decision-agent").value;
@@ -535,7 +575,7 @@ async function loadDecisions() {
       agentIds.map(
         (id) =>
           request(
-            `/simulations/${run}/agents/${encodeURIComponent(id)}/decisions`,
+            `/simulations/${run}/agents/${encodeURIComponent(id)}/decisions?limit=12`,
           ) as Promise<(DecisionRecord & { cycleId?: string })[]>,
       ),
     )
@@ -556,6 +596,9 @@ async function loadDecisions() {
       a.agentId.localeCompare(b.agentId)
     );
   });
+  const signature = JSON.stringify({ run, agent, records: records.slice(-8) });
+  if (signature === decisionSignature) return;
+  decisionSignature = signature;
   const list = el("decision-list");
   list.replaceChildren();
   if (!records.length) {
@@ -567,10 +610,52 @@ async function loadDecisions() {
   }
   for (const record of records.slice(-8).reverse()) {
     const li = document.createElement("li");
-    li.textContent = `${record.agentId} · ${record.cycleId?.split(":").at(-1) ?? ""} · Tick ${record.tick} · ${record.status} · ${record.motivation ?? record.error ?? "Scripted beslissing"}${record.action ? " · " + JSON.stringify(record.action) : ""}${record.outcome ? " · resultaat " + record.outcome.status + (record.outcome.error ? " / " + record.outcome.error : "") : ""}`;
+    li.textContent = `${record.agentId} · ${record.cycleId?.split(":").at(-1) ?? ""} · Tick ${record.tick} · ${record.action ? actionTitle(record.action) : record.status}`;
+    appendExplanation(li, record);
+    appendOutcome(li, record.outcome);
+    if (record.error) {
+      const failure = document.createElement("p");
+      failure.textContent = `Beslissing: ${outcomeReason(record.error)}`;
+      li.append(failure);
+    }
+    if (!record.motivation) {
+      const note = document.createElement("p");
+      note.textContent =
+        "Voor deze oudere beslissing is geen motivatie vastgelegd.";
+      li.append(note);
+    }
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Waarneming, toolaanroepen en brongegevens";
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(record, null, 2);
+    details.append(summary, pre);
+    li.append(details);
     list.append(li);
   }
 }
+async function refreshDecisions() {
+  if (
+    decisionLoading ||
+    !socket.connected ||
+    !status ||
+    el("live-panel").hidden ||
+    replayActive ||
+    document.hidden ||
+    !!el("decision-list").querySelector("details[open]") ||
+    el("decision-list").contains(document.activeElement)
+  )
+    return;
+  decisionLoading = true;
+  try {
+    await loadDecisions();
+  } catch (e) {
+    error(String(e));
+  } finally {
+    decisionLoading = false;
+  }
+}
+const decisionTimer = setInterval(() => void refreshDecisions(), 2000);
 function showDecisions() {
   button("live-tab").click();
   void control(loadDecisions);
@@ -579,6 +664,7 @@ button("decisions").addEventListener("click", showDecisions);
 select("decision-agent").addEventListener("change", showDecisions);
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
+    clearInterval(decisionTimer);
     stopReplay();
     socket.disconnect();
     scene?.dispose();
@@ -654,7 +740,10 @@ async function seekReplay() {
     summary.textContent = `Tick ${record.tick} · ${record.action?.type ?? record.status} · ${record.motivation ?? record.error ?? "Scripted beslissing"}`;
     const pre = document.createElement("pre");
     pre.textContent = JSON.stringify(record, null, 2);
-    details.append(summary, pre);
+    details.append(summary);
+    appendExplanation(details, record);
+    appendOutcome(details, record.outcome);
+    details.append(pre);
     list.append(details);
   }
   if (!data.decisions.length)
@@ -841,6 +930,7 @@ async function loadTimeline(reset = false) {
   for (const event of result.events) {
     const item = document.createElement("li");
     item.textContent = `${event.tick} · ${event.actorId} · ${event.message}${event.targetId ? " · " + event.targetId : ""}`;
+    appendExplanation(item, event);
     el("history-events").append(item);
   }
   historyCursor = result.nextCursor;

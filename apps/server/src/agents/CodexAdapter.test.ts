@@ -89,6 +89,14 @@ class FakeRpc implements RpcTransport {
                 ? JSON.stringify({
                     action: { type: "move", target: { x: 10, y: 0, z: 10 } },
                     motivation: "Explore via MCP",
+                    artifactConsiderations: [
+                      {
+                        entityId: "artifact-near",
+                        decision: "approach",
+                        reason:
+                          "It is portable but too far away; I will approach first.",
+                      },
+                    ],
                   })
                 : "Exploring a new area.",
           },
@@ -274,10 +282,22 @@ describe("Codex decisions", () => {
       expect(result.record.tools).toHaveLength(1);
       expect(result.record.tools[0]!.tool).toBe("world_move");
       expect(result.record.tools[0]!.success).toBe(true);
-      expect(
-        rpc.calls.find((c) => c.method === "turn/start")!.params.outputSchema
-          .properties.action.anyOf,
-      ).toBeDefined();
+      expect(result.record.artifactConsiderations).toEqual([
+        {
+          entityId: "artifact-near",
+          decision: "approach",
+          reason: "It is portable but too far away; I will approach first.",
+        },
+      ]);
+      expect(result.artifactConsiderations).toEqual(
+        result.record.artifactConsiderations,
+      );
+      const outputSchema = rpc.calls.find((c) => c.method === "turn/start")!
+        .params.outputSchema;
+      expect(outputSchema.properties.action.anyOf).toBeDefined();
+      expect(outputSchema.required).toEqual(
+        expect.arrayContaining(Object.keys(outputSchema.properties)),
+      );
     } finally {
       await adapter.close();
     }

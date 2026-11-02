@@ -1,4 +1,7 @@
 import { once } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { io, type Socket } from "socket.io-client";
 import { describe, expect, it } from "vitest";
@@ -16,6 +19,67 @@ const json = (method: string, body: unknown) => ({
   body: JSON.stringify(body),
 });
 describe("simulation API", () => {
+  it("creates runs beyond eight saved runs, including after restart, without losing history", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "island-run-limit-"));
+    const databasePath = join(directory, "runs.sqlite");
+    let runtime = createApp({ databasePath, now: () => 0, policy: null });
+    try {
+      const first = runtime.simulations.get("sim-001")!;
+      first.engine.submitAction("alpha", { type: "look", orientation: 1 });
+      first.engine.step();
+      await first.stop();
+      const history = runtime.store.timeline(first.cycleId, 0);
+      expect(history.length).toBeGreaterThan(0);
+      const checkpoint = first.engine.checkpoint();
+      for (let i = 2; i <= 8; i++) {
+        const created = await runtime.app.request(
+          "/api/simulations",
+          json("POST", {}),
+        );
+        expect(created.status).toBe(201);
+        const { id } = await created.json();
+        await runtime.app.request(
+          `/api/simulations/${id}/${i % 2 ? "stop" : "pause"}`,
+          { method: "POST" },
+        );
+      }
+      const ninth = await runtime.app.request(
+        "/api/simulations",
+        json("POST", {}),
+      );
+      expect(ninth.status).toBe(201);
+      expect((await ninth.json()).id).toBe("sim-009");
+      expect(first.engine.checkpoint()).toEqual(checkpoint);
+      expect(runtime.store.timeline(first.cycleId, 0)).toEqual(history);
+
+      await runtime.shutdown();
+      runtime = createApp({ databasePath, now: () => 0, policy: null });
+      const tenth = await runtime.app.request(
+        "/api/simulations",
+        json("POST", {}),
+      );
+      expect(tenth.status).toBe(201);
+      expect((await tenth.json()).id).toBe("sim-010");
+      const runs = await (await runtime.app.request("/api/simulations")).json();
+      expect(new Set(runs.map((run: SimulationStatus) => run.id)).size).toBe(
+        10,
+      );
+      expect(runtime.simulations.get("sim-001")!.engine.checkpoint()).toEqual(
+        checkpoint,
+      );
+      expect(runtime.store.timeline(first.cycleId, 0)).toEqual(history);
+      expect(
+        (
+          await runtime.app.request(
+            `/api/simulations/sim-001/replays/${encodeURIComponent(first.cycleId)}?tick=1`,
+          )
+        ).status,
+      ).toBe(200);
+    } finally {
+      await runtime.shutdown();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("serves a complete world and rejects raw position writes", async () => {
     const { app } = createApp({ policy: null });
     expect((await app.request("/api/health")).status).toBe(200);

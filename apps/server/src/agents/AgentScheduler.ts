@@ -1,11 +1,12 @@
 import {
   actionSchema,
+  type ActionExplanation,
   type AgentObservation,
   type SchedulerMode,
   type WorldActionInput,
 } from "../../../../packages/shared/src/index.js";
 import { WorldEngine, type ActionSubmission } from "../world/WorldEngine.js";
-export interface PolicyProposal {
+export interface PolicyProposal extends ActionExplanation {
   action: WorldActionInput;
   onSubmitted?: (result: ActionSubmission) => void;
   onCancelled?: () => void;
@@ -71,12 +72,21 @@ export class AgentScheduler {
           clearTimeout(d.timer);
           if (!actionSchema.safeParse(proposal.action).success) {
             proposal.onCancelled?.();
-            d.proposal = { action: { type: "wait", durationMs: 1000 } };
+            d.proposal = {
+              action: { type: "wait", durationMs: 1000 },
+              motivation:
+                "De voorgestelde actie was ongeldig; ik wacht kort voordat ik opnieuw kies.",
+            };
           } else d.proposal = proposal;
           d.ready = true;
         };
         const fallback = () => {
-          if (!d.ready) resolve({ type: "wait", durationMs: 1000 });
+          if (!d.ready)
+            resolve({
+              action: { type: "wait", durationMs: 1000 },
+              motivation:
+                "De beslissing mislukte of duurde te lang; ik wacht kort voordat ik opnieuw kies.",
+            });
         };
         try {
           const result = this.policy(
@@ -100,7 +110,10 @@ export class AgentScheduler {
       a < b ? -1 : a > b ? 1 : 0,
     ))
       if (d.ready) {
-        const result = this.engine.submitAction(id, d.proposal!.action);
+        const result = this.engine.submitAction(id, d.proposal!.action, {
+          motivation: d.proposal!.motivation,
+          artifactConsiderations: d.proposal!.artifactConsiderations,
+        });
         d.proposal?.onSubmitted?.(result);
         this.decisions.delete(id);
       }

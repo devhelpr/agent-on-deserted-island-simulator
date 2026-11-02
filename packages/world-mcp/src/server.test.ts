@@ -116,3 +116,33 @@ describe("identity-bound World MCP", () => {
     expect((await session.call("world_observe", {})).success).toBe(false);
   });
 });
+
+it("preserves public artifact assessments as metadata rather than world-action input", async () => {
+  const session = await createWorldToolSession(observation);
+  const considerations = [
+    {
+      entityId: "artifact",
+      decision: "defer",
+      reason:
+        "My inventory is full; I will finish studying my current find first.",
+    },
+  ];
+  try {
+    expect(
+      (
+        await session.call("world_wait", {
+          durationMs: 1000,
+          motivation: "Study my find",
+          artifactConsiderations: considerations,
+        })
+      ).success,
+    ).toBe(true);
+    expect(session.proposed()).toEqual({
+      action: { type: "wait", durationMs: 1000 },
+      motivation: "Study my find",
+      artifactConsiderations: considerations,
+    });
+  } finally {
+    await session.close();
+  }
+});

@@ -1,5 +1,6 @@
 import {
   distance,
+  INTERACTION_RANGE,
   entityRadius,
   type AgentObservation,
   type AgentState,
@@ -54,8 +55,7 @@ export function observe(
     visibleEntities: entities
       .filter(
         (e) =>
-          e.ownerId === agent.id ||
-          (!e.ownerId && canSee(agent, e.position, entities, e.id)),
+          e.ownerId === agent.id || canSee(agent, e.position, entities, e.id),
       )
       .map((e) => ({
         id: e.id,
@@ -71,6 +71,25 @@ export function observe(
         kind: e.kind,
         label: e.label,
         movable: e.properties.movable,
+        pickup: {
+          eligible:
+            e.properties.movable &&
+            !e.ownerId &&
+            !agent.inventory.length &&
+            distance(agent.position, e.position) <=
+              INTERACTION_RANGE + entityRadius(e),
+          blocker: !e.properties.movable
+            ? "NOT_MOVABLE"
+            : e.ownerId
+              ? "OBJECT_UNAVAILABLE"
+              : agent.inventory.length
+                ? "INVENTORY_FULL"
+                : distance(agent.position, e.position) >
+                    INTERACTION_RANGE + entityRadius(e)
+                  ? "OUT_OF_RANGE"
+                  : null,
+          interactionDistance: INTERACTION_RANGE + entityRadius(e),
+        },
       })),
     visibleAgents: agents
       .filter((a) => a.id !== agent.id && canSee(agent, a.position, entities))
