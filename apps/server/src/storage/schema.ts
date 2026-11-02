@@ -158,3 +158,18 @@ export const consolidations = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.cycleId, t.agentId] })],
 );
+export const replayFrames = sqliteTable(
+  "replay_frames",
+  {
+    cycleId: text("cycle_id")
+      .notNull()
+      .references(() => cycles.id),
+    sequence: integer().notNull(),
+    tick: integer().notNull(),
+    full: integer().notNull(),
+    payload: text().notNull(),
+    hash: text().notNull(),
+    versions: text().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cycleId, t.sequence] })],
+);

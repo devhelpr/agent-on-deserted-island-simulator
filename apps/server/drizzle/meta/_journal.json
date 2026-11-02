@@ -8,6 +8,13 @@
       "when": 1793618225697,
       "tag": "0000_memory_and_cycles",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793618225698,
+      "tag": "0001_replay",
+      "breakpoints": true
     }
   ]
 }

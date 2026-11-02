@@ -10,6 +10,7 @@ import {
 } from "../../../packages/shared/src/index.js";
 import type { DecisionPolicy } from "./agents/AgentScheduler.js";
 import { SimulationStore, type Checkpoint } from "./storage/SimulationStore.js";
+import { WorldEngine } from "./world/WorldEngine.js";
 import { Simulation } from "./simulation/Simulation.js";
 
 export function createApp(
@@ -86,7 +87,13 @@ export function createApp(
   app.get("/api/health", (c) => c.json({ status: "ok" }));
   app.get("/api/world", (c) => c.json(initial.snapshot()));
   app.get("/api/worlds", (c) =>
-    c.json([{ id: "island-48291", seed: 48291, version: 2 }]),
+    c.json([
+      {
+        id: "island-48291-v3",
+        seed: 48291,
+        version: 3,
+      },
+    ]),
   );
   app.get("/api/simulations", (c) =>
     c.json([...simulations.values()].map((s) => s.status())),
@@ -127,6 +134,83 @@ export function createApp(
   app.get("/api/simulations/:id/world", (c) =>
     c.json(simulations.get(c.req.param("id"))!.snapshot()),
   );
+  app.get("/api/simulations/:id/replays", (c) =>
+    c.json(
+      store.sqlite
+        .prepare(
+          `SELECT c.id, c."index" AS cycleIndex, c.status,
+      MIN(f.tick) AS firstTick, MAX(f.tick) AS lastTick, COUNT(f.sequence) AS frames
+      FROM simulation_cycles c JOIN replay_frames f ON f.cycle_id=c.id
+      WHERE c.runId=? GROUP BY c.id ORDER BY c."index"`,
+        )
+        .all(c.req.param("id")),
+    ),
+  );
+  app.get("/api/simulations/:id/replays/:cycleId", (c) => {
+    const cycleId = c.req.param("cycleId");
+    const cycle = store.sqlite
+      .prepare("SELECT id FROM simulation_cycles WHERE id=? AND runId=?")
+      .get(cycleId, c.req.param("id"));
+    if (!cycle) return c.json({ error: "REPLAY_NOT_FOUND" }, 404);
+    const tick = Number(c.req.query("tick") ?? 0);
+    if (!Number.isSafeInteger(tick) || tick < 0)
+      return c.json({ error: "INVALID_TICK" }, 400);
+    const result = store.replay.reconstruct(cycleId, tick);
+    if (!result) return c.json({ error: "REPLAY_NOT_RECORDED" }, 404);
+    const live = simulations.get(c.req.param("id"))!;
+    const engine = new WorldEngine(live.engine.getDefinition());
+    engine.restore(result.checkpoint);
+    const agentId = c.req.query("agentId");
+    const observation = agentId ? engine.observe(agentId) : null;
+    if (agentId && !observation)
+      return c.json({ error: "AGENT_NOT_FOUND" }, 404);
+    const decisions = agentId
+      ? store
+          .listDecisions(live.id, agentId)
+          .filter((d) => d.cycleId === cycleId && d.tick <= tick)
+          .map((d) => ({
+            ...d,
+            outcome:
+              d.outcome?.finishedAtTick !== undefined &&
+              d.outcome.finishedAtTick > tick
+                ? undefined
+                : d.outcome,
+          }))
+      : [];
+    const discovered = agentId
+      ? store.sqlite
+          .prepare(
+            "SELECT tick,payload FROM agent_experiences WHERE cycleId=? AND agentId=? AND tick<=? ORDER BY tick,id",
+          )
+          .all(cycleId, agentId, tick)
+          .map((row) => JSON.parse((row as { payload: string }).payload))
+          .filter((e) => e.kind === "entity")
+          .map((e) => e.entity)
+      : [];
+    const state = engine.getState();
+    if (observation) {
+      const entities = new Set(observation.visibleEntities.map((e) => e.id));
+      const agents = new Set([
+        agentId,
+        ...observation.visibleAgents.map((a) => a.id),
+      ]);
+      state.entities = state.entities.filter((e) => entities.has(e.id));
+      state.agents = state.agents.filter((a) => agents.has(a.id));
+      state.events = observation.recentEvents;
+      state.actions = observation.lastAction ? [observation.lastAction] : [];
+    }
+    return c.json({
+      cycleId,
+      tick: result.checkpoint.tick,
+      hash: result.hash,
+      sequence: result.sequence,
+      definition: { ...engine.getDefinition(), entities: state.entities },
+      state,
+      observation,
+      decisions: decisions.slice(-50),
+      discovered,
+    });
+  });
   app.get("/api/simulations/:id/agents", (c) =>
     c.json(simulations.get(c.req.param("id"))!.engine.getState().agents),
   );

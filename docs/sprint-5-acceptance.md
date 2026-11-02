@@ -1,0 +1,17 @@
+# Milestone 5 acceptance
+
+Implemented replay recording and reconstruction, historical viewing controls, agent POV, Decision Inspector, and an object discovery map.
+
+The append-only `replay_frames` log records each committed world change in the same transaction as the authoritative checkpoint and world events. Sequence numbers are unique and increasing within a cycle. The first record and minute boundaries (every 1,200 ticks) contain full checkpoints; intermediate records replace changed checkpoint fields. Initial and final cycle snapshots remain in `world_snapshots`. Replay records retain generator, navigation, physics, and format versions. SQLite triggers reject updates and deletions of replay records.
+
+Canonical SHA-256 hashes sort object keys, omit undefined fields, retain array order, and preserve exact JSON floating point values. Replay restores recorded values instead of simulating movement again. The reconstructed final checkpoint is verified against the recorded hash before returning it. Multiple commits at a tick resolve to the latest sequence for that tick.
+
+The acceptance test records a complete 72,000-tick cycle, including movement, checks 61 minute checkpoints and an intermediate tick, and seeks them forwards and backwards under 1×, 5×, and 20× playback schedules. Every reconstructed hash matches the original. Tests also cover transactional rollback, append-only enforcement, cycle reset boundaries, disk reopening, API validation, run/cycle scoping, and filtered POV. Playback speed only controls which ticks the client requests; it does not change reconstruction.
+
+The dashboard provides cycle selection, play/pause, 1×–20× speed, a tick seek slider, free camera, three historical agent views, and a map of previously observed object locations. Decision Inspector shows recorded observations, memory context, public motivation, tools, and outcomes. Outcomes completed after the selected tick are withheld. Live socket updates continue independently and cannot overwrite replay rendering. Live mutation controls are disabled while inspecting history.
+
+Additional requested behavior: generator v3 creates portable crystals, shells, and relics with explicit observation labels and portability flags. Distinct geometry, colors, glow, and rings distinguish them from scenery. Three appear near the spawn area. Scripted agents prefer artifacts. Pickup/drop ownership rules remain authoritative. Visible neighbors within 10 m receive automatic greetings, once per directed encounter; crossing beyond 15 m rearms greeting. Encounter state survives checkpoints. Tests cover artifact generation and interaction, bidirectional greeting, repetition suppression, and reunion.
+
+Existing saved world definitions retain their original generator version; new runs receive v3. Existing histories cannot be reconstructed before the first replay record created after this migration. Replay currently uses replacement patches at checkpoint-field granularity; SQLite storage grows with recorded history. The discovery map represents observed object locations rather than terrain coverage.
+
+Validation: `npm run typecheck`, all 68 tests in 15 files, and `npm run build` pass. Browser verification covered a new v3 scripted run, greetings in the timeline, pausing, cycle selection, seeking, filtered Alpha POV, accumulated discoveries, Decision Inspector entries, and 20× playback. [Verified replay preview](sprint-5-preview.png).

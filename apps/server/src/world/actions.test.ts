@@ -43,11 +43,9 @@ describe("atomic actions", () => {
           .map((id) => engine.getAction(id)!.status)
           .filter((s) => s === "succeeded"),
       ).toHaveLength(1);
-      expect(state.events.map((e) => e.actorId)).toEqual([
-        "alpha",
-        "beta",
-        "gamma",
-      ]);
+      expect(
+        state.events.filter((e) => e.actionId).map((e) => e.actorId),
+      ).toEqual(["alpha", "beta", "gamma"]);
     }
   });
   it("validates input, range, visibility and ownership when executed", () => {

@@ -16,6 +16,8 @@ export interface WorldEntity {
   position: Vector3;
   rotation: number;
   scale: number;
+  kind?: "crystal" | "shell" | "relic";
+  label?: string;
   properties: { movable: boolean; inspectable: boolean };
 }
 export interface EntityState extends WorldEntity {
@@ -111,6 +113,9 @@ export interface AgentObservation {
     direction: number;
     radius: number;
     ownerId: string | null;
+    kind?: WorldEntity["kind"];
+    label?: string;
+    movable?: boolean;
   }[];
   visibleAgents: { id: string; position: Vector3; distance: number }[];
   recentEvents: WorldEvent[];
@@ -138,7 +143,9 @@ export const schedulerSchema = z.strictObject({
   schedulerMode: z.enum(["live", "experiment"]),
 });
 export const simulationSchema = z.strictObject({
-  worldId: z.literal("island-48291").default("island-48291"),
+  worldId: z
+    .enum(["island-48291", "island-48291-v3"])
+    .default("island-48291-v3"),
   timeScale: speedSchema.shape.timeScale.default(1),
   schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
   controller: z.enum(["scripted", "codex"]).default("scripted"),

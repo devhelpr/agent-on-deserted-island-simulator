@@ -84,14 +84,17 @@ export function generateWorld(
     for (let i = 0; i < count; i++) {
       let placed = false;
       for (let attempt = 0; attempt < 2000; attempt++) {
-        const p = position(
-          (random() - 0.5) * config.size,
-          (random() - 0.5) * config.size,
-        );
+        const p =
+          type === "artifact" && i < 3 && attempt === 0
+            ? position(-26, -16 + i * 6)
+            : position(
+                (random() - 0.5) * config.size,
+                (random() - 0.5) * config.size,
+              );
         // Keep the spawn area clear for the three agents.
         if (
           p.y < 1 ||
-          Math.hypot(p.x, p.z) < 30 ||
+          (Math.hypot(p.x, p.z) < 30 && type !== "artifact") ||
           entities.some(
             (e) => Math.hypot(e.position.x - p.x, e.position.z - p.z) < 4,
           )
@@ -103,7 +106,18 @@ export function generateWorld(
           position: p,
           rotation: mm(random() * Math.PI * 2),
           scale: mm(0.8 + random() * 0.7),
-          properties: { movable: type === "rock", inspectable: true },
+          ...(type === "artifact"
+            ? {
+                kind: (["crystal", "shell", "relic"] as const)[i % 3],
+                label: ["Glowing crystal", "Golden shell", "Ancient relic"][
+                  i % 3
+                ],
+              }
+            : {}),
+          properties: {
+            movable: type === "rock" || type === "artifact",
+            inspectable: true,
+          },
         });
         placed = true;
         break;
@@ -114,8 +128,8 @@ export function generateWorld(
         );
     }
   return {
-    id: `island-${config.seed}`,
-    version: 2,
+    id: `island-${config.seed}-v3`,
+    version: 3,
     seed: config.seed,
     terrain,
     spawnPoints: [position(-18, -18), position(-12, -18), position(-6, -18)],

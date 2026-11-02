@@ -199,14 +199,34 @@ export class IslandScene {
         }
       } else {
         const artifact = new THREE.Mesh(
-          new THREE.OctahedronGeometry(2.5),
+          entity.kind === "shell"
+            ? new THREE.SphereGeometry(1.3, 12, 6)
+            : entity.kind === "relic"
+              ? new THREE.BoxGeometry(1.8, 1.8, 1.8)
+              : new THREE.OctahedronGeometry(1.8),
           new THREE.MeshStandardMaterial({
-            color: 0x77ddcc,
+            color:
+              entity.kind === "shell"
+                ? 0xffcf61
+                : entity.kind === "relic"
+                  ? 0xff8c69
+                  : 0x77ddcc,
             emissive: 0x2c776e,
             emissiveIntensity: 0.6,
           }),
         );
-        artifact.position.y = 3;
+        if (entity.kind === "shell") artifact.scale.set(1.4, 0.45, 1);
+        artifact.position.y = 1.8;
+        const halo = new THREE.Mesh(
+          new THREE.RingGeometry(2, 2.3, 32),
+          new THREE.MeshBasicMaterial({
+            color: 0xffdd77,
+            side: THREE.DoubleSide,
+          }),
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = 0.15;
+        group.add(halo);
         group.add(artifact);
       }
       group.position.set(
@@ -241,13 +261,13 @@ export class IslandScene {
         entity.position.y + (entity.ownerId ? 6 : 0),
         entity.position.z,
       );
-      if (entity.activated && entity.type === "artifact")
+      if (entity.type === "artifact")
         group.traverse((object) => {
           if (
             object instanceof THREE.Mesh &&
             object.material instanceof THREE.MeshStandardMaterial
           )
-            object.material.emissiveIntensity = 2;
+            object.material.emissiveIntensity = entity.activated ? 2 : 0.6;
         });
     }
   }

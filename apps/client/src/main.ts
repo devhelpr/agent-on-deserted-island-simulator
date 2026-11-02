@@ -11,19 +11,20 @@ import { IslandScene } from "./world/IslandScene";
 import "./style.css";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
-<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 04 <span>/</span> GEHEUGEN & CYCLI</span></header>
+<header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 05 <span>/</span> REPLAY</span></header>
 <main><section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">EXPERIMENT · SEED <span id="seed">—</span></p><h1>Samen op onbekend terrein.</h1><p class="intro">Drie verkenners. Eén gedeeld eiland. Elke actie telt.</p></div><span class="local-badge">LOCAL FIRST ↗</span></div>
 <div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="reset-cycle" type="button" disabled>Cyclus resetten</button><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option></select></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
-<div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
+<div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label" id="view-source"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle" id="view-camera">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
 <div class="metrics"><div><span>WERELDTIJD</span><strong id="world-time">00:00</strong></div><div><span>SIMULATIETICK</span><strong id="tick">0</strong></div><div><span>EILAND</span><strong id="size">—</strong></div><div><span>OBJECTEN</span><strong id="entity-count">—</strong></div></div>
-<nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live & beslissingen</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
+<nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live & beslissingen</button><button id="replay-tab" type="button" aria-pressed="false">Replay</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
+<section id="replay-panel" hidden aria-label="Replay"><div class="simulation-controls"><label>Cyclus<select id="replay-cycle"></select></label><button id="replay-refresh" type="button">Vernieuwen</button><button id="replay-play" type="button">Afspelen</button><label>Afspeelsnelheid<select id="replay-speed"><option>1</option><option>2</option><option>5</option><option>10</option><option>20</option></select></label><label>Weergave<select id="replay-pov"><option value="">Vrije camera</option><option value="alpha">Alpha POV</option><option value="beta">Beta POV</option><option value="gamma">Gamma POV</option></select></label></div><label class="replay-seek">Tijdlijn<input id="replay-seek" type="range" min="0" max="0" value="0" step="1" /></label><p id="replay-info" role="status"></p><div class="replay-discovery"><canvas id="discovery-map" width="260" height="260" aria-label="Ontdekte objectlocaties op het eiland"></canvas><p id="discovery-info">Kies een agent POV om ontdekkingen tot dit tijdstip te bekijken.</p></div><h2>Decision Inspector</h2><p>Vastgelegde waarneming, geheugen, publieke motivatie, tools en resultaat.</p><div id="replay-decisions"></div></section>
 <section id="memory-panel" hidden aria-label="Agentgeheugen"><div class="memory-heading"><h2 id="memory-agent">Geheugen · Alpha</h2><span id="memory-cycle"></span></div><form id="memory-search"><label>Doorzoek herinneringen<input id="memory-query" type="search" maxlength="500" placeholder="Bijvoorbeeld cave of rock" /></label><button type="submit">Zoeken</button><button id="memory-refresh" type="button">Vernieuwen</button></form><p id="memory-summary"></p><p id="memory-goals"></p><ol id="memory-list"></ol></section>
 <div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><ol id="decision-list"><li>Kies een agent en bekijk diens beslissingen.</li></ol></div></div>
 </section><aside><div class="panel-heading"><p class="eyebrow">IN HET VELD</p><h2>De verkenners<span>03</span></h2></div><div id="agents"></div>
 <div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
-<div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents zoeken een pad, onderzoeken objecten en proberen stenen op te pakken. Eén object kan maar één eigenaar hebben.</p></div></div>
+<div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents begroeten elkaar, onderzoeken objecten en verzamelen kristallen, schelpen en relikwieën. Eén object kan maar één eigenaar hebben.</p></div></div>
 <div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
-<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>De wereld terugspoelen.</h3><p>Sprint 05 voegt replay, een tijdlijn en historische wereldtoestanden toe.</p><span>05 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · Generator v2</span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
+<div class="next"><p class="eyebrow">VOLGENDE MIJLPAAL</p><h3>Samen leren.</h3><p>Sprint 06 voegt experimentvergelijkingen en gebruiksregistratie toe.</p><span>06 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · <span id="generator-version">Generator v3</span></span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
 const el = (id: string) => document.getElementById(id)!;
 let scene: IslandScene | undefined;
 try {
@@ -39,6 +40,12 @@ let selectedAgent = "alpha";
 let status: SimulationStatus | undefined;
 let state: WorldStateDto | undefined;
 let busy = false;
+let replayActive = false;
+let liveSnapshot:
+  import("../../../packages/shared/src/index.js").WorldSnapshot | undefined;
+let replayRequest = 0;
+let replayPlaying = false;
+let replayTimer: ReturnType<typeof setTimeout> | undefined;
 const socket: Socket<ServerEvents, ClientEvents> = io({
   query: { simulationId },
 });
@@ -59,7 +66,7 @@ async function request(path: string, method = "GET", body?: unknown) {
   return data;
 }
 function refreshControls() {
-  const connected = socket.connected && !!status;
+  const connected = socket.connected && !!status && !replayActive;
   const stopped = status?.status === "stopped";
   for (const id of [
     "pause",
@@ -215,6 +222,17 @@ async function loadRuns() {
 }
 function subscribe(id: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    stopReplay();
+    replayRequest++;
+    replayActive = false;
+    el("replay-panel").hidden = true;
+    el("live-panel").hidden = false;
+    el("memory-panel").hidden = true;
+    button("live-tab").setAttribute("aria-pressed", "true");
+    button("memory-tab").setAttribute("aria-pressed", "false");
+    el("view-source").textContent = "LIVE WORLD";
+    el("view-camera").textContent = "FREE CAMERA";
+    button("replay-tab").setAttribute("aria-pressed", "false");
     simulationId = id;
     status = undefined;
     state = undefined;
@@ -256,6 +274,10 @@ socket.on("connect_error", () => {
 });
 socket.on("world:snapshot", (snapshot) => {
   if (snapshot.simulation.id !== simulationId) return;
+  liveSnapshot = snapshot;
+  el("generator-version").textContent =
+    `Generator v${snapshot.definition.version}`;
+  if (replayActive) return;
   scene?.load(snapshot.definition);
   update(snapshot.state);
   updateStatus(snapshot.simulation);
@@ -274,7 +296,10 @@ socket.on("world:snapshot", (snapshot) => {
     );
 });
 socket.on("world:delta", (data) => {
-  if (data.simulationId === simulationId) update(data.state);
+  if (data.simulationId === simulationId) {
+    if (liveSnapshot) liveSnapshot.state = data.state;
+    if (!replayActive) update(data.state);
+  }
 });
 socket.on("simulation:state", updateStatus);
 button("reset-camera").addEventListener("click", () => scene?.resetCamera());
@@ -345,12 +370,25 @@ async function loadMemory() {
     list.append(item);
   }
 }
-for (const tab of ["live", "memory"])
+for (const tab of ["live", "memory", "replay"])
   button(`${tab}-tab`).addEventListener("click", () => {
-    for (const name of ["live", "memory"]) {
+    for (const name of ["live", "memory", "replay"]) {
       el(`${name}-panel`).hidden = name !== tab;
       button(`${name}-tab`).setAttribute("aria-pressed", String(name === tab));
     }
+    replayActive = tab === "replay";
+    el("view-source").textContent = replayActive
+      ? "RECORDED REPLAY"
+      : "LIVE WORLD";
+    el("view-camera").textContent = "FREE CAMERA";
+    stopReplay();
+    replayRequest++;
+    if (replayActive) void control(loadReplayCycles);
+    else if (liveSnapshot) {
+      scene?.load(liveSnapshot.definition);
+      update(liveSnapshot.state);
+    }
+    refreshControls();
     if (tab === "memory") void control(loadMemory);
   });
 el("memory-search").addEventListener("submit", (event) => {
@@ -452,6 +490,152 @@ button("decisions").addEventListener(
 );
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
+    stopReplay();
     socket.disconnect();
     scene?.dispose();
   });
+
+function stopReplay() {
+  replayPlaying = false;
+  clearTimeout(replayTimer);
+  button("replay-play").textContent = "Afspelen";
+}
+async function loadReplayCycles() {
+  const run = simulationId;
+  const cycles: {
+    id: string;
+    cycleIndex: number;
+    firstTick: number;
+    lastTick: number;
+  }[] = await request(`/simulations/${run}/replays`);
+  if (!replayActive || run !== simulationId) return;
+  const previous = select("replay-cycle").value;
+  select("replay-cycle").replaceChildren(
+    ...cycles.map((cycle) => {
+      const option = document.createElement("option");
+      option.value = cycle.id;
+      option.textContent = `Cyclus ${cycle.cycleIndex} · ${cycle.lastTick} ticks`;
+      option.dataset.first = String(cycle.firstTick);
+      option.dataset.last = String(cycle.lastTick);
+      return option;
+    }),
+  );
+  if (cycles.some((c) => c.id === previous))
+    select("replay-cycle").value = previous;
+  await changeReplayCycle();
+}
+async function changeReplayCycle() {
+  stopReplay();
+  const option = select("replay-cycle").selectedOptions[0];
+  button("replay-play").disabled = !option;
+  if (!option) {
+    el("replay-info").textContent =
+      "Geen opgenomen replay beschikbaar voor deze run.";
+    return;
+  }
+  const seek = el("replay-seek") as HTMLInputElement;
+  seek.min = option.dataset.first!;
+  seek.max = option.dataset.last!;
+  seek.value = seek.min;
+  await seekReplay();
+}
+async function seekReplay() {
+  if (!replayActive || !select("replay-cycle").value) return;
+  const generation = ++replayRequest;
+  const seek = el("replay-seek") as HTMLInputElement;
+  const pov = select("replay-pov").value;
+  const data = await request(
+    `/simulations/${simulationId}/replays/${encodeURIComponent(select("replay-cycle").value)}?tick=${seek.value}${pov ? `&agentId=${pov}` : ""}`,
+  );
+  if (!replayActive || generation !== replayRequest) return;
+  scene?.load(data.definition);
+  el("agents").replaceChildren();
+  update(data.state);
+  el("view-camera").textContent = pov
+    ? `${pov.toUpperCase()} POV`
+    : "FREE CAMERA";
+  if (pov) scene?.focusAgent(pov);
+  el("replay-info").textContent =
+    `Replay · tick ${data.tick} / ${seek.max} · SHA-256 ${data.hash.slice(0, 16)} · ${pov ? `${pov}: alleen destijds zichtbare objecten en agents` : "Vrije camera"}`;
+  const list = el("replay-decisions");
+  list.replaceChildren();
+  for (const record of data.decisions.slice().reverse()) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = `Tick ${record.tick} · ${record.action?.type ?? record.status} · ${record.motivation ?? record.error ?? "Scripted beslissing"}`;
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(record, null, 2);
+    details.append(summary, pre);
+    list.append(details);
+  }
+  if (!data.decisions.length)
+    list.textContent = pov
+      ? "Nog geen beslissingen op dit tijdstip."
+      : "Kies een agent POV om beslissingen te inspecteren.";
+  const canvas = el("discovery-map") as HTMLCanvasElement;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#173e45";
+  ctx.fillRect(0, 0, 260, 260);
+  const found = new Map<
+    string,
+    { position: { x: number; z: number }; type: string }
+  >();
+  for (const entity of data.discovered) found.set(entity.id, entity);
+  for (const entity of found.values()) {
+    ctx.fillStyle = entity.type === "artifact" ? "#ffcd60" : "#a9d2bd";
+    ctx.beginPath();
+    ctx.arc(
+      (entity.position.x / data.definition.terrain.width + 0.5) * 260,
+      (entity.position.z / data.definition.terrain.depth + 0.5) * 260,
+      3,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+  }
+  el("discovery-info").textContent = pov
+    ? `${pov} · ${found.size} ontdekte objecten tot tick ${data.tick}. Geel: artefacten. Boven: −Z; rechts: +X.`
+    : "Kies een agent POV om ontdekkingen tot dit tijdstip te bekijken.";
+}
+async function playReplay() {
+  if (!replayPlaying || !replayActive) return;
+  const seek = el("replay-seek") as HTMLInputElement;
+  seek.value = String(
+    Math.min(
+      Number(seek.max),
+      Number(seek.value) + 4 * Number(select("replay-speed").value),
+    ),
+  );
+  try {
+    await seekReplay();
+  } catch (e) {
+    error(String(e));
+    stopReplay();
+    return;
+  }
+  if (Number(seek.value) >= Number(seek.max)) stopReplay();
+  else if (replayPlaying)
+    replayTimer = setTimeout(() => void playReplay(), 200);
+}
+button("replay-refresh").addEventListener(
+  "click",
+  () => void control(loadReplayCycles),
+);
+select("replay-cycle").addEventListener(
+  "change",
+  () => void control(changeReplayCycle),
+);
+select("replay-pov").addEventListener("change", () => void control(seekReplay));
+el("replay-seek").addEventListener("input", () => {
+  stopReplay();
+  void seekReplay().catch((e) => error(String(e)));
+});
+button("replay-play").addEventListener("click", () => {
+  if (replayPlaying) {
+    stopReplay();
+    return;
+  }
+  replayPlaying = true;
+  button("replay-play").textContent = "Pauzeren";
+  void playReplay();
+});

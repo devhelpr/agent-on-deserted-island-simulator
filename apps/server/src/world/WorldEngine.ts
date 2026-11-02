@@ -47,6 +47,7 @@ export class WorldEngine {
     { from: string; text: string; tick: number }[]
   >();
   private readonly observedEvents = new Map<string, WorldEvent[]>();
+  private readonly encounters = new Set<string>();
   private commit?: () => void;
   private mutating = false;
   private accepting = true;
@@ -59,6 +60,7 @@ export class WorldEngine {
   }
   checkpoint() {
     return structuredClone({
+      encounters: [...this.encounters],
       tick: this.tick,
       nextAction: this.nextAction,
       nextEvent: this.nextEvent,
@@ -76,6 +78,8 @@ export class WorldEngine {
   }
   restore(checkpoint: ReturnType<WorldEngine["checkpoint"]>) {
     const c = structuredClone(checkpoint);
+    this.encounters.clear();
+    for (const key of c.encounters ?? []) this.encounters.add(key);
     this.tick = c.tick;
     this.nextAction = c.nextAction;
     this.nextEvent = c.nextEvent;
@@ -166,6 +170,9 @@ export class WorldEngine {
   getTick(): number {
     return this.tick;
   }
+  getDefinitionVersion() {
+    return this.definition.version;
+  }
   getDefinition(): WorldDefinition {
     return structuredClone(this.definition);
   }
@@ -233,7 +240,7 @@ export class WorldEngine {
     }
   }
   private event(
-    action: ActionRecord,
+    action: Pick<ActionRecord, "agentId"> & Partial<Pick<ActionRecord, "id">>,
     type: string,
     message: string,
     targetId?: string,
@@ -394,6 +401,8 @@ export class WorldEngine {
         return this.fail(action, "NOT_INSPECTABLE");
       this.finish(action, "succeeded", undefined, {
         type: entity.type,
+        kind: entity.kind,
+        label: entity.label,
         properties: { ...entity.properties },
         activated: entity.activated,
       });
@@ -479,6 +488,29 @@ export class WorldEngine {
       motion.blockedTicks = blocked ? motion.blockedTicks + 1 : 0;
       if (!motion.path.length) this.finish(action, "succeeded");
       else if (motion.blockedTicks >= 100) this.fail(action, "PATH_BLOCKED");
+    }
+    this.greetEncounters();
+  }
+  private greetEncounters() {
+    for (const agent of this.orderedAgents()) {
+      for (const other of this.orderedAgents()) {
+        if (agent.id === other.id) continue;
+        const key = `${agent.id}:${other.id}`;
+        const d = distance(agent.position, other.position);
+        if (d > 15) this.encounters.delete(key);
+        if (
+          d > 10 ||
+          this.encounters.has(key) ||
+          !canSee(agent, other.position, this.entityList())
+        )
+          continue;
+        this.encounters.add(key);
+        const text = `Hello ${other.name}! I'm ${agent.name}. Good to meet you!`;
+        const inbox = this.messages.get(other.id) ?? [];
+        inbox.push({ from: agent.id, text, tick: this.tick });
+        this.messages.set(other.id, inbox.slice(-50));
+        this.event({ agentId: agent.id }, "agent:greeting", text, other.id);
+      }
     }
   }
   getState(): WorldStateDto {

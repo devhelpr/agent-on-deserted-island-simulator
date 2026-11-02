@@ -61,15 +61,15 @@ Acceptatie gehaald met een deterministische, perceptiegebaseerde integratietest:
 
 ## Fase 5 / Sprint 5 — Replay Engine
 
-- [ ] S5.1 Append-only eventlog met unieke, oplopende sequence per cyclus.
-- [ ] S5.2 Begin-/eindsnapshot en periodieke snapshots elke 1.200 ticks; generator-, navigatie- en physicsversies bewaren.
-- [ ] S5.3 Wereld reconstrueren vanuit snapshot + events, zonder nieuwe modelaanroepen.
-- [ ] S5.4 Canonieke state-hash, stabiele volgorde en positieprecisie vastleggen; hashes op controlepunten testen.
-- [ ] S5.5 Replay-API, afspeelsnelheid, seek-tijdlijn en vrije camera.
-- [ ] S5.6 Agent POV, Decision Inspector en Discovery Map.
-- [ ] S5.7 Replaygelijkheid onafhankelijk van afspeelsnelheid testen.
+- [x] S5.1 Append-only eventlog met unieke, oplopende sequence per cyclus.
+- [x] S5.2 Begin-/eindsnapshot en periodieke snapshots elke 1.200 ticks; generator-, navigatie- en physicsversies bewaren.
+- [x] S5.3 Wereld reconstrueren vanuit snapshot + events, zonder nieuwe modelaanroepen.
+- [x] S5.4 Canonieke state-hash, stabiele volgorde en positieprecisie vastleggen; hashes op controlepunten testen.
+- [x] S5.5 Replay-API, afspeelsnelheid, seek-tijdlijn en vrije camera.
+- [x] S5.6 Agent POV, Decision Inspector en Discovery Map.
+- [x] S5.7 Replaygelijkheid onafhankelijk van afspeelsnelheid testen.
 
-Acceptatie: volledige cyclus terugspoelen met exact gelijke wereldtoestand op controlepunten.
+Acceptatie gehaald: volledige 72.000-tickcyclus terugspoelen met exact gelijke hashes op 61 minuutcontrolepunten, onafhankelijk van seekvolgorde. Zie [acceptatieverslag mijlpaal 5](docs/sprint-5-acceptance.md).
 
 ## Fase 6 / Sprint 6 — Multi-agent experimenten
 

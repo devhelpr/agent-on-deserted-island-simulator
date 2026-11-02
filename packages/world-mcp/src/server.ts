@@ -49,7 +49,7 @@ export const worldTools = [
   {
     name: "world_pickup",
     description:
-      "Propose picking up a nearby visible movable rock. Capacity is one object.",
+      "Propose picking up a nearby visible portable artifact or movable rock. Capacity is one object.",
     schema: z.strictObject({ entityId, ...reason }),
   },
   {

@@ -156,7 +156,11 @@ describe("durable agent memory", () => {
     sim.engine.step();
     expect(sim.engine.getAction("act-1")!.status).toBe("succeeded");
     expect(
-      store.sqlite.prepare("SELECT count(*) AS n FROM world_events").get(),
+      store.sqlite
+        .prepare(
+          "SELECT count(*) AS n FROM world_events WHERE json_extract(payload, '$.actionId') IS NOT NULL",
+        )
+        .get(),
     ).toEqual({ n: 1 });
     await sim.stop();
     store.close();

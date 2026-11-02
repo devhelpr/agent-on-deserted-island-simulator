@@ -785,3 +785,33 @@ select:focus-visible {
   outline: 2px solid #a8cf93;
   outline-offset: 3px;
 }
+
+.replay-seek {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0;
+}
+.replay-seek input {
+  width: 100%;
+  accent-color: #357d67;
+}
+.replay-discovery {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 20px 0;
+}
+#replay-decisions details {
+  border-top: 1px solid #ccd4c8;
+  padding: 12px 0;
+}
+#replay-decisions pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
+  font-size: 12px;
+}
+#replay-info {
+  overflow-wrap: anywhere;
+}

@@ -1,3 +1,4 @@
+import { ReplayLog } from "../replay/ReplayLog.js";
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -32,12 +33,14 @@ export type Experience =
 export class SimulationStore {
   readonly sqlite: Database.Database;
   readonly db;
+  readonly replay: ReplayLog;
   constructor(path = ":memory:") {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.sqlite = new Database(path);
     this.sqlite.pragma("journal_mode = WAL");
     this.sqlite.pragma("foreign_keys = ON");
     this.sqlite.pragma("busy_timeout = 5000");
+    this.replay = new ReplayLog(this.sqlite);
     this.db = drizzle(this.sqlite, { schema });
     migrate(this.db, {
       migrationsFolder: fileURLToPath(
@@ -121,6 +124,7 @@ export class SimulationStore {
   ) {
     this.transaction(() => {
       const checkpoint = engine.checkpoint();
+      this.replay.append(cycleId, checkpoint, engine.getDefinitionVersion());
       this.db
         .update(schema.cycles)
         .set({

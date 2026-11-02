@@ -68,6 +68,9 @@ export function observe(
         ),
         radius: entityRadius(e),
         ownerId: e.ownerId,
+        kind: e.kind,
+        label: e.label,
+        movable: e.properties.movable,
       })),
     visibleAgents: agents
       .filter((a) => a.id !== agent.id && canSee(agent, a.position, entities))

@@ -116,14 +116,19 @@ export function createScriptedPolicy(): DecisionPolicy {
     if (failed) return explore(true);
     const target = observation.visibleEntities
       .filter((e) => !e.ownerId && !state.visited.has(e.id))
-      .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id))
+      .sort(
+        (a, b) =>
+          Number(b.type === "artifact") - Number(a.type === "artifact") ||
+          a.distance - b.distance ||
+          a.id.localeCompare(b.id),
+      )
       .find((e) => e.type === "rock" || e.type === "artifact");
     if (target) {
       state.lastTarget = target.id;
       if (target.distance <= INTERACTION_RANGE + target.radius) {
         if (state.turn % 3 === 0)
           return { type: "inspect", entityId: target.id };
-        return target.type === "rock"
+        return (target.movable ?? target.type === "rock")
           ? { type: "pickup", entityId: target.id }
           : { type: "interact", entityId: target.id, interaction: "activate" };
       }

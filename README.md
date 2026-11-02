@@ -1,6 +1,6 @@
 # Agent Island
 
-A local-first simulation platform in TypeScript. Milestone 4 adds durable agent memory, crash recovery, and recurring cycles. Real Codex agents use an identity-bound MCP runtime. The foundation provides a deterministic 3D island with three scripted agents, an adjustable simulation clock, navigation, and shared object interactions. Hono and the World Engine manage the world; Socket.IO sends state to the Vite/Three.js viewer. Codex is optional; the default run uses scripted agents.
+A local-first simulation platform in TypeScript. Milestone 5 adds exact historical replay, agent POV, a Decision Inspector, and a discovery map. Durable memory, crash recovery, and recurring cycles are included. Real Codex agents use an identity-bound MCP runtime. The foundation provides a deterministic 3D island with three scripted agents, an adjustable simulation clock, navigation, and shared object interactions. Hono and the World Engine manage the world; Socket.IO sends state to the Vite/Three.js viewer. Codex is optional; the default run uses scripted agents.
 
 ## Running locally
 
@@ -18,7 +18,9 @@ Open **http://127.0.0.1:5173**. The backend listens on **http://127.0.0.1:3001**
 - Each cycle lasts 72,000 ticks (one virtual hour). **Reset cycle** (**Cyclus resetten**) restores the initial world and preserves each agent's own memory. The **Memory** (**Geheugen**) tab shows sources, confidence, importance, revisions, and text search results for each agent.
 - Stopping a run is permanent; **New run** (**Nieuwe run**) creates an independent experiment. The run selector switches the live connection to the correct Socket.IO room.
 - View the selected agent's observation or cancel its action. A scripted agent chooses another action on the next tick.
-- The timeline shows recent results and errors; inventories and carried objects reflect server state.
+- The timeline shows recent results, greetings, and errors; inventories and carried objects reflect server state.
+- Open **Replay**, choose a cycle, and drag the timeline or play at 1×–20×. Choose **Alpha/Beta/Gamma POV** to see that agent's historical view, discovered object locations, and recorded decisions. Live simulation controls are disabled while viewing history; the run continues independently.
+- Portable artifacts now include glowing crystals, golden shells, and ancient relics, with distinct shapes, colors, and ground rings. Three are placed near the starting area. Agents can pick up, carry, drop, inspect, or activate them. Agents greet visible neighbors within 10 m once per encounter; separating beyond 15 m allows another greeting.
 
 ## Starting a real Codex agent
 
@@ -59,13 +61,13 @@ In **Live** mode, the world keeps running while agents decide. In **Experiment**
 
 ## World, navigation, and interactions
 
-Generator v2 retains seed `48291`, a 500 × 500 m heightmap with 81 × 81 samples, 120 trees, 80 rocks, 12 artifacts, and one cave. Version 2 adds three unobstructed spawn points. The same version and configuration produce the same definition. Runtime state and outgoing snapshots are independent copies.
+Generator v3 retains seed `48291`, a 500 × 500 m heightmap with 81 × 81 samples, 120 trees, 80 rocks, 12 artifacts, and one cave. Version 3 adds named portable artifact kinds and nearby pickups, keeping the three spawn corridors clear. Existing stored worlds retain their original definition; create a new run for the new artifacts. The same version and configuration produce the same definition. Runtime state and outgoing snapshots are independent copies.
 
 Navigation uses a triangular navmesh derived from the terrain. A* searches across triangle centers; edges and simplified path segments are checked for water, excessively steep slopes, and objects with clearance for the agent. Each movement step also checks current objects and other agents. Picking up or dropping an object invalidates the obstacle index. A route that remains blocked for 5 virtual seconds ends with `PATH_BLOCKED`; the scripted policy then chooses again. This is simple kinematic collision detection, without rigid-body physics or cooperative path planning.
 
 Every action receives an ID and follows the status sequence `queued → running → succeeded/failed/cancelled`. Each agent can have one pending action. At the start of a tick, conflicts are resolved in agent-ID order, regardless of request arrival order. Distance, availability, visibility, and ownership are checked again at execution time.
 
-Supported actions: `move`, `look`, `wait`, `inspect`, `interact` (activate an artifact), `pickup` (a movable rock), and `drop`. An agent carries at most one object. Dropped objects cannot overlap another object or agent. Target elevation is always calculated from the terrain by the server.
+Supported actions: `move`, `look`, `wait`, `inspect`, `interact` (activate an artifact), `pickup` (a portable artifact or movable rock), and `drop`. An agent carries at most one object. Dropped objects cannot overlap another object or agent. Target elevation is always calculated from the terrain by the server.
 
 Perception uses a horizontal range of 25 m, a 120° field of view, and 2D occlusion by trees, rocks, and the cave. Interaction range is 3 m from an object's boundary. Agents always know their own inventory. Each event's audience is determined when it occurs; later observations do not grant access to global history. The human viewer sees the entire world, while agent observations remain limited. Terrain hills do not yet block visibility in this version.
 
@@ -75,7 +77,7 @@ The default run is `sim-001`. The server stores at most 8 runs in `apps/server/d
 
 After a restart, existing runs are restored in a paused state, including positions, object ownership, routes, wait durations, actions, decisions, and memory. Click **Resume** (**Hervatten**) to continue. A run that was already stopped remains stopped. Interrupted model decisions are cancelled; Codex starts with a new thread and the agent's own memory. A crash during cycle closing leaves that cycle blocked for actions; resuming or resetting retries the transactional closing procedure.
 
-Perception-based consolidation is deterministic and makes no additional model call: visible objects produce semantic location claims, an agent's own action results produce episodic memories, successful moves produce procedural route hypotheses, and received messages produce reported claims. Duplicate claims share sources and revisions; new direct location observations supersede older claims, while other contradictions remain marked. Context contains a bounded summary, relevant memories belonging to the agent, recent experiences, and goals. Model-generated summaries and replay are future work. See the [milestone 4 acceptance report](docs/sprint-4-acceptance.md).
+Perception-based consolidation is deterministic and makes no additional model call: visible objects produce semantic location claims, an agent's own action results produce episodic memories, successful moves produce procedural route hypotheses, and received messages produce reported claims. Duplicate claims share sources and revisions; new direct location observations supersede older claims, while other contradictions remain marked. Context contains a bounded summary, relevant memories belonging to the agent, recent experiences, and goals. Model-generated summaries are future work. See the [milestone 4 acceptance report](docs/sprint-4-acceptance.md).
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -86,6 +88,8 @@ Perception-based consolidation is deterministic and makes no additional model ca
 | GET | `/api/simulations/:id` | Clock and status |
 | GET | `/api/simulations/:id/world` | World definition, runtime state, and status |
 | GET | `/api/simulations/:id/agents` | Agents |
+| GET | `/api/simulations/:id/replays` | Recorded cycles and available tick ranges |
+| GET | `/api/simulations/:id/replays/:cycleId?tick=1200&agentId=alpha` | Verified historical state, optional agent POV, decisions, and discovered objects |
 | POST | `/api/simulations/:id/pause`, `/resume`, `/stop` | Control a run |
 | PATCH | `/api/simulations/:id/speed` | `{ "timeScale": 1/2/5/10/20 }` |
 | PATCH | `/api/simulations/:id/mode` | `{ "schedulerMode": "live"/"experiment" }` |
@@ -98,10 +102,12 @@ Perception-based consolidation is deterministic and makes no additional model ca
 | GET | `/api/simulations/:id/actions/:actionId` | Action result |
 | POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Cancel a pending action |
 
-A new run optionally accepts `worldId: "island-48291"`, `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
+A new run optionally accepts `worldId: "island-48291-v3"` (the legacy `"island-48291"` value remains accepted as an alias), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
 
 Socket.IO sends `world:snapshot` on connection, reconnection, and subscription. `simulation:subscribe(id, ack)` switches rooms. `world:delta` contains `{ simulationId, state }`, and `simulation:state` contains clock status. Both are sent at most 10 times per real second, regardless of acceleration. Control changes also trigger an immediate status event. The viewer interpolates between positions. In this version, a delta contains the complete current entity list and bounded recent actions/events; further delta compression is future work.
 
-The engine retains at most 512 action records (pending actions are preserved), 200 recent global events, and 100 observed events per agent. Network state contains at most 60 recent actions and 40 recent events. These limits apply only to the real-time view; SQLite stores the full event history, decisions, and initial/final checkpoints. Historical replay is planned for milestone 5.
+The engine retains at most 512 action records (pending actions are preserved), 200 recent global events, and 100 observed events per agent. Network state contains at most 60 recent actions and 40 recent events. These limits apply only to the real-time view; SQLite stores the full event history, decisions, and initial/final checkpoints. Historical replay is available through the Replay tab and API.
 
 Technical references: [Hono Node adapter](https://hono.dev/docs/getting-started/nodejs), [Socket.IO rooms](https://socket.io/docs/v4/rooms/), [Zod](https://zod.dev/basics), [Vite](https://vite.dev/guide/).
+
+Replay records every committed world change in a separate append-only SQLite log, with a strictly increasing per-cycle sequence. Records contain full checkpoints initially and every 1,200 ticks, and replacement patches for changed checkpoint fields between them. Existing initial/final cycle snapshots are retained. Each record includes generator, navigation, physics, and format versions and a SHA-256 hash. Reconstruction uses recorded values without model calls or movement integration. Canonical hashing sorts object keys, preserves array order, omits undefined fields, and preserves exact JSON numeric precision. Seeking a tick returns its latest committed state, including actions submitted at that tick. Historical POV uses restored perception and event audiences, while the discovery map accumulates that agent's observed object positions. Older runs have replay only from the first capture after upgrading; unavailable earlier history is not fabricated. See the [milestone 5 acceptance report](docs/sprint-5-acceptance.md).
