@@ -569,13 +569,15 @@ footer {
   flex-wrap: wrap;
   margin: 0 0 16px;
 }
-.simulation-controls label {
+.simulation-controls label,
+.agent-tools label {
   font-size: 9px;
   color: #9daea5;
   display: grid;
   gap: 5px;
   letter-spacing: 0.6px;
 }
+.agent-tools select,
 .simulation-controls select,
 .simulation-controls button,
 .agent-tools button {
