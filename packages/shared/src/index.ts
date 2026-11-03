@@ -305,21 +305,30 @@ export interface CycleMetrics {
     contradictedLocations: number;
   }[];
 }
-export const simulationSchema = z.strictObject({
-  worldId: z
-    .enum(["island-48291", "island-48291-v3", "island-48291-v4"])
-    .default("island-48291-v4"),
-  timeScale: speedSchema.shape.timeScale.default(1),
-  schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
-  controller: z.enum(["scripted", "codex"]).default("scripted"),
-  experiment: experimentSchema.optional(),
-  codexAgentIds: z
-    .array(z.enum(["alpha", "beta", "gamma"]))
-    .min(1)
-    .max(3)
-    .refine((ids) => new Set(ids).size === ids.length)
-    .default(["alpha"]),
-});
+export const simulationSchema = z
+  .strictObject({
+    worldId: z
+      .enum(["island-48291", "island-48291-v3", "island-48291-v4"])
+      .default("island-48291-v4"),
+    timeScale: speedSchema.shape.timeScale.default(1),
+    schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
+    controller: z.enum(["scripted", "codex"]).default("scripted"),
+    agentCount: z.union([z.literal(1), z.literal(3)]).default(3),
+    experiment: experimentSchema.optional(),
+    codexAgentIds: z
+      .array(z.enum(["alpha", "beta", "gamma"]))
+      .min(1)
+      .max(3)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .default(["alpha"]),
+  })
+  .refine(
+    (input) =>
+      input.agentCount !== 1 ||
+      input.controller !== "codex" ||
+      input.codexAgentIds.every((id) => id === "alpha"),
+    { message: "Solo runs only contain Alpha", path: ["codexAgentIds"] },
+  );
 export type SchedulerMode = z.infer<typeof schedulerSchema>["schedulerMode"];
 export interface AgentSessionStatus {
   agentId: string;

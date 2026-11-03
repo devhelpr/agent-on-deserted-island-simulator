@@ -30,7 +30,7 @@ export class IslandScene {
     this.renderer.setClearColor(0x1c4148);
     this.renderer.domElement.setAttribute(
       "aria-label",
-      "3D eiland met agents Alpha, Beta en Gamma",
+      "3D eiland met verkenners",
     );
     this.host.append(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0x1c4148, 650, 1300);
@@ -258,6 +258,18 @@ export class IslandScene {
     }
   }
   update(state: WorldStateDto) {
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      `3D eiland met ${state.agents.map((agent) => agent.name).join(", ")}`,
+    );
+    const presentAgents = new Set(state.agents.map((agent) => agent.id));
+    for (const [id, agent] of this.agents) {
+      if (!presentAgents.has(id)) {
+        this.scene.remove(agent.group);
+        this.disposeGroup(agent.group);
+        this.agents.delete(id);
+      }
+    }
     for (const data of state.agents) {
       const existing = this.agents.get(data.id);
       const agent = existing ?? this.createAgent(data.id);

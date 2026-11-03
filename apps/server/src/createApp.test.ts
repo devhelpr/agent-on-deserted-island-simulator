@@ -19,6 +19,77 @@ const json = (method: string, body: unknown) => ({
   body: JSON.stringify(body),
 });
 describe("simulation API", () => {
+  it("persists the solo population across recovery and cycle reset", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "island-solo-"));
+    const databasePath = join(directory, "runs.sqlite");
+    let runtime = createApp({ databasePath, now: () => 0, policy: null });
+    try {
+      const response = await runtime.app.request(
+        "/api/simulations",
+        json("POST", {
+          controller: "codex",
+          agentCount: 1,
+        }),
+      );
+      expect(response.status).toBe(201);
+      const { id } = await response.json();
+      const assertSolo = async () => {
+        const snapshot = await (
+          await runtime.app.request(`/api/simulations/${id}/world`)
+        ).json();
+        expect(
+          snapshot.state.agents.map(
+            (agent: { id: string; controller: string }) => [
+              agent.id,
+              agent.controller,
+            ],
+          ),
+        ).toEqual([["alpha", "codex"]]);
+        expect(
+          (
+            await runtime.app.request(
+              `/api/simulations/${id}/agents/beta/observation`,
+            )
+          ).status,
+        ).toBe(404);
+      };
+      await assertSolo();
+      await runtime.shutdown();
+      runtime = createApp({ databasePath, now: () => 0, policy: null });
+      await assertSolo();
+      expect(
+        (
+          await runtime.app.request(`/api/simulations/${id}/reset`, {
+            method: "POST",
+          })
+        ).status,
+      ).toBe(200);
+      await assertSolo();
+      expect(
+        (
+          await runtime.app.request(
+            "/api/simulations",
+            json("POST", { agentCount: 2 }),
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await runtime.app.request(
+            "/api/simulations",
+            json("POST", {
+              controller: "codex",
+              agentCount: 1,
+              codexAgentIds: ["beta"],
+            }),
+          )
+        ).status,
+      ).toBe(400);
+    } finally {
+      await runtime.shutdown();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it("creates runs beyond eight saved runs, including after restart, without losing history", async () => {
     const directory = mkdtempSync(join(tmpdir(), "island-run-limit-"));
     const databasePath = join(directory, "runs.sqlite");

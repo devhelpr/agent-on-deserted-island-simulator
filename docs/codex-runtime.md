@@ -17,6 +17,8 @@ Kies in het dashboard bij **Nieuwe run met** de optie **Codex Alpha + 2 scripted
 
 De API kan een andere set eilandagents kiezen:
 
+Kies **Alleen Codex Alpha** voor één echte agent zonder andere bewoners. Deze modus stuurt `agentCount: 1` en `codexAgentIds: ["alpha"]`; de standaard is drie bewoners. Beta en Gamma worden niet aangemaakt en verschijnen niet in de wereld, agentkaarten, filters of replay-POV-keuzes. De populatie blijft behouden bij cyclusreset en serverherstart.
+
 ```json
 {
   "controller": "codex",

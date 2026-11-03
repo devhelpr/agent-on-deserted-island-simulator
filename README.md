@@ -27,6 +27,8 @@ Open **http://127.0.0.1:5173**. The backend listens on **http://127.0.0.1:3001**
 
 Make sure the Codex CLI is available and `codex login` has been completed. Select **3 autonome Codex-agents** under **Nieuwe run met** in the dashboard for three independent agents, or **Codex Alpha + 2 scripted** for a mixed run. Set the number of cycles and the decision budget per agent per cycle before creating the run. Each Codex agent gets its own thread, filtered observations, and world actions through a restricted MCP session. Model status and public decisions are visible in the dashboard.
 
+Choose **Alleen Codex Alpha** to run one real Codex agent alone, with no scripted inhabitants. Only Alpha appears in the world, agent cards, filters and replay POV choices. This population persists across cycle resets and server restarts. The API equivalent is `controller: "codex", agentCount: 1, codexAgentIds: ["alpha"]`; `agentCount` defaults to `3` for existing modes.
+
 The live acceptance test ran for 15 minutes of simulation time, with 13 model decisions and 10 successful moves. Details and a repeatable test command are available in the [Codex runtime guide](docs/codex-runtime.md) and the [milestone 3 acceptance report](docs/sprint-3-acceptance.md).
 
 ## Multi-agent experiments

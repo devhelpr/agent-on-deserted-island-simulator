@@ -31,6 +31,7 @@ export function createApp(
     controller: "scripted" | "codex" = "scripted",
     codexAgentIds: string[] = ["alpha"],
     experiment?: ExperimentConfig,
+    agentCount: 1 | 3 = 3,
   ) => {
     const simulation = new Simulation(
       `sim-${String(nextId++).padStart(3, "0")}`,
@@ -38,7 +39,7 @@ export function createApp(
       timeScale,
       mode,
       options.policy,
-      { controller, codexAgentIds, experiment, store },
+      { controller, codexAgentIds, experiment, agentCount, store },
     );
     simulations.set(simulation.id, simulation);
     return simulation;
@@ -111,6 +112,7 @@ export function createApp(
       input.data.controller,
       input.data.codexAgentIds,
       input.data.experiment,
+      input.data.agentCount,
     );
     return c.json(simulation.status(), 201);
   });

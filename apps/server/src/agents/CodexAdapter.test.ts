@@ -160,6 +160,47 @@ const setup = (timeout = 1000) => {
   return { rpc, adapter };
 };
 describe("Codex decisions", () => {
+  it("runs only Alpha in solo mode, including after a cycle reset", async () => {
+    const { rpc, adapter } = setup();
+    const store = new SimulationStore();
+    const sim = new Simulation("solo", 0, 1, "experiment", undefined, {
+      adapter,
+      store,
+      controller: "codex",
+      agentCount: 1,
+      definition: flatWorld(),
+      experiment: { maxCycles: 2, decisionBudgetPerAgentPerCycle: 1 },
+    });
+    const decide = async (now: number) => {
+      sim.advance(now);
+      for (let i = 0; i < 100 && sim.scheduler!.pendingAgents().length; i++)
+        await new Promise((done) => setTimeout(done, 1));
+      sim.advance(now + 50);
+    };
+    try {
+      await decide(50);
+      expect(sim.snapshot().state.agents.map((agent) => agent.id)).toEqual([
+        "alpha",
+      ]);
+      expect(sim.engine.observe("alpha")!.visibleAgents).toEqual([]);
+      expect(sim.engine.observe("beta")).toBeNull();
+      expect(rpc.turns).toBe(1);
+      expect(sim.status().experiment!.decisionsUsed).toEqual({ alpha: 1 });
+      expect(store.listDecisions(sim.id, "alpha")[0]!.status).toBe("submitted");
+      await sim.reset();
+      await decide(150);
+      expect(sim.engine.getAgents().map((agent) => agent.id)).toEqual([
+        "alpha",
+      ]);
+      expect(rpc.turns).toBe(2);
+      expect(rpc.threads).toBe(2);
+      expect(store.listDecisions(sim.id, "beta")).toEqual([]);
+      expect(store.listDecisions(sim.id, "gamma")).toEqual([]);
+    } finally {
+      await sim.shutdown();
+      store.close();
+    }
+  });
   it("backs off all agents in wall time, grows the delay and recovers using the same thread", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(1000000);

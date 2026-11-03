@@ -27,6 +27,7 @@ export const runs = sqliteTable("simulation_runs", {
     .$type<{
       controller: "scripted" | "codex";
       codexAgentIds: string[];
+      agentCount?: 1 | 3;
       experiment?: ExperimentConfig;
     }>()
     .notNull(),

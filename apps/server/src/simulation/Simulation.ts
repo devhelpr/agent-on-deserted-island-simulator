@@ -29,6 +29,7 @@ export interface AgentRuntimeOptions {
   controller?: "scripted" | "codex";
   experiment?: ExperimentConfig;
   codexAgentIds?: string[];
+  agentCount?: 1 | 3;
   adapter?: CodexAdapter;
   store?: SimulationStore;
   definition?: WorldDefinition;
@@ -108,6 +109,7 @@ export class Simulation {
           {
             controller: options.controller ?? "scripted",
             codexAgentIds: options.codexAgentIds ?? ["alpha"],
+            agentCount: options.agentCount ?? 3,
             experiment: options.experiment,
           },
           this.status(),
@@ -127,7 +129,17 @@ export class Simulation {
     this.persist();
   }
   private newEngine() {
-    const engine = new WorldEngine(this.options.definition ?? generateWorld());
+    const definition = this.options.definition ?? generateWorld();
+    const engine = new WorldEngine(
+      definition,
+      this.options.agentCount === 1
+        ? definition.spawnPoints.slice(0, 1).map((position) => ({
+            id: "alpha",
+            name: "Alpha",
+            position,
+          }))
+        : undefined,
+    );
     if (this.options.controller === "codex")
       for (const id of this.options.codexAgentIds ?? ["alpha"])
         engine.setController(id, "codex");
