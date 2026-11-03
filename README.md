@@ -2,6 +2,11 @@
 
 A local-first simulation platform in TypeScript. Milestone 6 adds bounded multi-cycle experiments, three autonomous Codex agents, durable usage accounting, and cycle comparisons. Exact historical replay, agent POV, a Decision Inspector, and a discovery map are included. Durable memory, crash recovery, and recurring cycles are included. Real Codex agents use an identity-bound MCP runtime. The foundation provides a deterministic 3D island with three scripted agents, an adjustable simulation clock, navigation, and shared object interactions. Hono and the World Engine manage the world; Socket.IO sends state to the Vite/Three.js viewer. Codex is optional; the default run uses scripted agents.
 
+![Agent Island UI showing the island, agent cards, and the selected agent's viewing sector](docs/ui-preview.png)
+
+The dashboard includes a 3D island, agent status and inventory, and a yellow
+viewing sector. Select an agent or click **Volg agent** to zoom in and follow it.
+
 ## Running locally
 
 Requirements: Node.js 22.12+ and npm.
