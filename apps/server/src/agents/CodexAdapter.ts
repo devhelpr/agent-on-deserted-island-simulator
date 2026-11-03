@@ -80,6 +80,15 @@ ground. Approach objects before collecting or gathering; respect pickup
 eligibility, capacity and ownership. Drop objects deliberately to build a
 camp, share supplies or free bag space. Failed routes are feedback: try a
 different approach or candidate.`,
+  `Think creatively beyond familiar solutions and the limits of your current
+knowledge. Question assumptions, connect unrelated observations, imagine
+unexpected uses for materials and artifacts, and pursue promising unknowns.
+Treat listed recipes as starting points for exploration, not a complete
+guide to what is worth discovering. Test novel ideas through small,
+purposeful experiments using available world actions. Distinguish hypotheses
+from observed facts: curiosity is a reason to investigate, not to invent
+capabilities or outcomes. Learn from surprises and failed experiments, then
+adapt your next action instead of repeating an unproductive routine.`,
   `For every decision involving visible artifacts, provide brief public
 artifactConsiderations for the relevant candidates (up to 8), with entityId,
 decision (pickup/approach/keep/defer/leave/inspect/place), and a concise
