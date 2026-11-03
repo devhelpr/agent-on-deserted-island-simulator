@@ -1,5 +1,7 @@
 import {
   actionSchema,
+  distance,
+  type Vector3,
   type ActionExplanation,
   type AgentObservation,
   type SchedulerMode,
@@ -26,6 +28,13 @@ interface Decision {
 export class AgentScheduler {
   private readonly decisions = new Map<string, Decision>();
   private epoch = 0;
+  private readonly lastDecisionActions = new Map<string, string | null>();
+  private readonly lastDecisionPoses = new Map<
+    string,
+    { position: Vector3; orientation: number }
+  >();
+  private readonly nearby = new Map<string, Set<string>>();
+  private readonly encounters = new Set<string>();
   constructor(
     private readonly engine: WorldEngine,
     private readonly policy: DecisionPolicy,
@@ -44,6 +53,23 @@ export class AgentScheduler {
     d.proposal?.onCancelled?.();
   }
   prepare(mode: SchedulerMode): boolean {
+    for (const agent of this.engine.getAgents()) {
+      if (!this.canDecide(agent.id)) continue;
+      const current = new Set(this.engine.getEncounterIds(agent.id));
+      const previous = this.nearby.get(agent.id);
+      if (previous && [...current].some((id) => !previous.has(id)))
+        this.encounters.add(agent.id);
+      this.nearby.set(agent.id, current);
+      if (!agent.activeActionId || !this.encounters.has(agent.id)) continue;
+      const action = this.engine.getAction(agent.activeActionId);
+      // Walking may stop for an encounter; an airborne agent must land first.
+      if (
+        action?.status === "running" &&
+        action.input.type === "move" &&
+        this.canDecide(agent.id)
+      )
+        this.engine.cancelAction(agent.id, action.id, "ENCOUNTER");
+    }
     const idle = this.engine.getIdleAgents();
     const idleIds = new Set(idle.map((a) => a.id));
     for (const [id, d] of this.decisions)
@@ -53,6 +79,37 @@ export class AgentScheduler {
       }
     for (const agent of idle)
       if (!this.decisions.has(agent.id) && this.canDecide(agent.id)) {
+        const observation = this.engine.observe(agent.id)!;
+        const action = observation.lastAction;
+        const actionId = action?.id ?? null;
+        const pose = this.lastDecisionPoses.get(agent.id);
+        const unchangedPose =
+          pose &&
+          Math.hypot(
+            distance(pose.position, observation.position),
+            pose.position.y - observation.position.y,
+          ) < 1e-6 &&
+          Math.abs(pose.orientation - observation.orientation) < 1e-6;
+        const noNewStop =
+          action?.status === "succeeded" &&
+          ["move", "look"].includes(action.input.type) &&
+          unchangedPose;
+        if (noNewStop && !this.encounters.has(agent.id)) {
+          this.lastDecisionActions.set(agent.id, actionId);
+          continue;
+        }
+        if (
+          this.lastDecisionActions.has(agent.id) &&
+          this.lastDecisionActions.get(agent.id) === actionId &&
+          !this.encounters.has(agent.id)
+        )
+          continue;
+        this.lastDecisionActions.set(agent.id, actionId);
+        this.lastDecisionPoses.set(agent.id, {
+          position: { ...observation.position },
+          orientation: observation.orientation,
+        });
+        this.encounters.delete(agent.id);
         const d: Decision = { ready: false, controller: new AbortController() };
         const epoch = this.epoch;
         this.decisions.set(agent.id, d);
@@ -89,10 +146,7 @@ export class AgentScheduler {
             });
         };
         try {
-          const result = this.policy(
-            this.engine.observe(agent.id)!,
-            d.controller.signal,
-          );
+          const result = this.policy(observation, d.controller.signal);
           if (result instanceof Promise) {
             d.timer = setTimeout(() => {
               d.controller.abort(new Error("DECISION_TIMEOUT"));
@@ -123,5 +177,9 @@ export class AgentScheduler {
     this.epoch++;
     for (const d of this.decisions.values()) this.discard(d);
     this.decisions.clear();
+    this.lastDecisionActions.clear();
+    this.lastDecisionPoses.clear();
+    this.nearby.clear();
+    this.encounters.clear();
   }
 }

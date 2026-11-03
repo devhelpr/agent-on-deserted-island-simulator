@@ -81,6 +81,15 @@ Each tick represents 50 ms of virtual time. The server processes movement at 3 m
 
 The clock processes at most 100 ticks per pump and retains at most 5 seconds of virtual backlog. Excess backlog is discarded and reported as `droppedSimulationTimeMs`. Virtual ticks themselves are never skipped: the world slows down under overload. The dashboard shows the remaining backlog and unprocessed virtual time.
 
+Decisions are event-driven: an agent starts with one decision, then chooses
+again after an action finishes or a new visible object or inhabitant is encountered
+nearby. Objects count as nearby within interaction range; inhabitants within 10 m.
+A walking agent stops for a new encounter. Jumps finish and land before another
+decision is requested. Remaining beside the same object does not trigger repeated
+decisions, and a successful walk or look that changes neither position nor heading
+does not start another decision loop. Completed interactions, waits and failed
+actions still return their result so the agent can choose its next step.
+
 In **Live** mode, the world keeps running while agents decide. In **Experiment** mode, a tick waits until all decisions required at that point are ready. They are then submitted in agent-ID order. Time spent waiting at a decision barrier is not caught up later. Each agent can have at most one decision in progress. A failed decision, or one exceeding its configured deadline (10 s for scripted policies, 60 s for the Codex adapter), falls back to a short virtual wait action. Stopping or changing the decision mode invalidates any older results that arrive later.
 
 Codex returns a structured JSON decision; the host dispatches the world action

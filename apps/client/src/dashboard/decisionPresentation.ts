@@ -5,6 +5,8 @@ import type {
 } from "../../../../packages/shared/src/index.js";
 
 const outcomes: Record<string, string> = {
+  ENCOUNTER:
+    "Gestopt bij een nieuwe ontmoeting in de buurt om opnieuw te kiezen.",
   OUT_OF_RANGE: "Het object is nog te ver weg; eerst dichterbij lopen.",
   OBJECT_UNAVAILABLE: "Het object is inmiddels in bezit van een agent.",
   INVENTORY_FULL: "De voorwerpentas heeft onvoldoende vrije plekken.",

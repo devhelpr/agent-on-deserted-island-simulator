@@ -212,6 +212,34 @@ export class WorldEngine {
       ),
     );
   }
+  /** Nearby visible encounters, excluding possessions and objects still in flight. */
+  getEncounterIds(agentId: string): string[] {
+    const agent = this.agents.get(agentId);
+    if (!agent) return [];
+    const entities = this.solids();
+    return [
+      ...entities
+        .filter(
+          (e) =>
+            !e.ownerId &&
+            interactionDistance(agent.position, e) <=
+              INTERACTION_RANGE + entityRadius(e) &&
+            canSee(agent, e.position, entities, e.id),
+        )
+        .map((e) => `entity:${e.id}`),
+      ...this.orderedAgents()
+        .filter(
+          (other) =>
+            other.id !== agentId &&
+            Math.hypot(
+              distance(agent.position, other.position),
+              agent.position.y - other.position.y,
+            ) <= 10 &&
+            canSee(agent, other.position, entities),
+        )
+        .map((other) => `agent:${other.id}`),
+    ];
+  }
   getAction(id: string): ActionRecord | undefined {
     const a = this.actions.get(id);
     return a ? structuredClone(a) : undefined;
@@ -253,9 +281,13 @@ export class WorldEngine {
     this.trimActions();
     return { accepted: true, actionId: action.id };
   }
-  cancelAction(agentId: string, actionId: string): boolean {
+  cancelAction(
+    agentId: string,
+    actionId: string,
+    reason = "CANCELLED",
+  ): boolean {
     if (this.commit && !this.mutating)
-      return this.mutate(() => this.cancelAction(agentId, actionId));
+      return this.mutate(() => this.cancelAction(agentId, actionId, reason));
     const action = this.actions.get(actionId);
     if (
       !action ||
@@ -263,7 +295,7 @@ export class WorldEngine {
       !["queued", "running"].includes(action.status)
     )
       return false;
-    this.finish(action, "cancelled", "CANCELLED");
+    this.finish(action, "cancelled", reason);
     return true;
   }
   cancelAll(): void {
