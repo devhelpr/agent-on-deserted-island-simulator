@@ -254,9 +254,10 @@ export class Simulation {
             policy,
             this.codex ? 90000 : 10000,
             (id) =>
-              !this.options.experiment ||
-              (this.decisionsUsed[id] ?? 0) <
-                this.options.experiment.decisionBudgetPerAgentPerCycle,
+              (!this.codex || !codexIds.has(id) || this.codex.canDecide()) &&
+              (!this.options.experiment ||
+                (this.decisionsUsed[id] ?? 0) <
+                  this.options.experiment.decisionBudgetPerAgentPerCycle),
           )
         : null;
   }

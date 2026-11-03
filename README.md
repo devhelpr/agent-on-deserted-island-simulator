@@ -76,6 +76,8 @@ The clock processes at most 100 ticks per pump and retains at most 5 seconds of 
 
 In **Live** mode, the world keeps running while agents decide. In **Experiment** mode, a tick waits until all decisions required at that point are ready. They are then submitted in agent-ID order. Time spent waiting at a decision barrier is not caught up later. Each agent can have at most one decision in progress. A failed decision, or one exceeding its configured deadline (10 s for scripted policies, 60 s for the Codex adapter), falls back to a short virtual wait action. Stopping or changing the decision mode invalidates any older results that arrive later.
 
+After a Codex 429 rate-limit failure, all Codex agents within that run share a wall-clock cooldown, starting at roughly 30 seconds and increasing to at most 5 minutes on repeated failures. The scheduler resumes automatically after the cooldown without spending decision attempts while waiting. Simulation speed does not shorten this delay; scripted agents can continue. See the [Codex runtime guide](docs/codex-runtime.md).
+
 ## World, navigation, and interactions
 
 Generator v4 retains seed `48291`, a 500 × 500 m heightmap with 81 × 81 samples, 120 trees, 80 rocks, 12 artifacts, and one cave. It adds 100 scattered materials (wood, stone, fiber, flint and resin), including supplies near the spawn area. Existing stored worlds retain their original definition; create a **new run** to explore the expanded island. The same version and configuration produce the same definition. Runtime state and outgoing snapshots are independent copies.

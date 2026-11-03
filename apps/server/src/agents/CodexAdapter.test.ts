@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentObservation } from "../../../../packages/shared/src/index.js";
 import { CodexAdapter } from "./CodexAdapter.js";
 import type { RpcMessage, RpcTransport } from "./codex/AppServerRpc.js";
@@ -23,7 +23,9 @@ class FakeRpc implements RpcTransport {
   alive = true;
   threads = 0;
   turns = 0;
-  mode: "normal" | "hang" | "empty" | "forbidden" | "early" | "json" = "normal";
+  mode:
+    "normal" | "hang" | "empty" | "forbidden" | "early" | "json" | "rateLimit" =
+    "normal";
   seenToolResult: any;
   async request<T = any>(method: string, params: any): Promise<T> {
     this.calls.push({ method, params });
@@ -51,6 +53,20 @@ class FakeRpc implements RpcTransport {
       this.emit("turn/started", { threadId: params.threadId, turn: { id } });
       const execute = async () => {
         if (this.mode === "hang") return;
+        if (this.mode === "rateLimit") {
+          this.emit("turn/completed", {
+            threadId: params.threadId,
+            turn: {
+              id,
+              status: "failed",
+              error: {
+                message:
+                  "exceeded retry limit, last status: 429 Too Many Requests",
+              },
+            },
+          });
+          return;
+        }
         if (this.mode === "forbidden") {
           this.emit("item/started", {
             threadId: params.threadId,
@@ -144,6 +160,91 @@ const setup = (timeout = 1000) => {
   return { rpc, adapter };
 };
 describe("Codex decisions", () => {
+  it("backs off all agents in wall time, grows the delay and recovers using the same thread", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000000);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    const { rpc, adapter } = setup();
+    rpc.mode = "rateLimit";
+    try {
+      const failures = await Promise.allSettled([
+        adapter.decide(observation("alpha")),
+        adapter.decide(observation("beta")),
+      ]);
+      expect(failures.every((r) => r.status === "rejected")).toBe(true);
+      expect(adapter.journal.list()[0]!.error).toContain("CODEX_RATE_LIMITED:");
+      expect(adapter.canDecide()).toBe(false);
+      await expect(adapter.decide(observation("gamma"))).rejects.toThrow(
+        "CODEX_RATE_LIMITED",
+      );
+      expect(rpc.turns).toBe(2);
+      expect(adapter.journal.list()).toHaveLength(2);
+      expect(rpc.calls.some((c) => c.method === "turn/interrupt")).toBe(false);
+      expect(rpc.alive).toBe(true);
+
+      vi.setSystemTime(1029999);
+      expect(adapter.canDecide()).toBe(false);
+      vi.setSystemTime(1030000);
+      expect(adapter.canDecide()).toBe(true);
+      await expect(adapter.decide(observation())).rejects.toThrow(
+        "CODEX_RATE_LIMITED",
+      );
+      vi.setSystemTime(1089999);
+      expect(adapter.canDecide()).toBe(false);
+      vi.setSystemTime(1090000);
+      rpc.mode = "normal";
+      await adapter.decide(observation());
+      expect(rpc.threads).toBe(2);
+      expect(adapter.canDecide()).toBe(true);
+
+      rpc.mode = "rateLimit";
+      await expect(adapter.decide(observation())).rejects.toThrow(
+        "CODEX_RATE_LIMITED",
+      );
+      vi.setSystemTime(1120000);
+      expect(adapter.canDecide()).toBe(true);
+    } finally {
+      await adapter.close();
+      random.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+  it("does not spend experiment attempts during backoff even at accelerated simulation speed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { rpc, adapter } = setup();
+    rpc.mode = "rateLimit";
+    const store = new SimulationStore();
+    const sim = new Simulation("limited", 0, 20, "experiment", undefined, {
+      adapter,
+      store,
+      controller: "codex",
+      codexAgentIds: ["alpha", "beta", "gamma"],
+      definition: flatWorld(),
+      experiment: { maxCycles: 1, decisionBudgetPerAgentPerCycle: 5 },
+    });
+    const settle = async () => {
+      for (let i = 0; i < 100 && sim.scheduler!.pendingAgents().length; i++)
+        await new Promise((done) => setTimeout(done, 1));
+    };
+    try {
+      sim.advance(50);
+      await settle();
+      expect(rpc.turns).toBe(3);
+      for (let now = 100; now <= 5000; now += 50) sim.advance(now);
+      expect(rpc.turns).toBe(3);
+      for (const id of ["alpha", "beta", "gamma"])
+        expect(store.listDecisions(sim.id, id)).toHaveLength(1);
+      vi.setSystemTime(Date.now() + 35000);
+      rpc.mode = "normal";
+      sim.advance(5050);
+      await settle();
+      expect(rpc.turns).toBe(6);
+    } finally {
+      await sim.shutdown();
+      store.close();
+      vi.useRealTimers();
+    }
+  });
   it("uses isolated thread settings, MCP tools, public motivation and resumes its own thread", async () => {
     const { rpc, adapter } = setup();
     try {

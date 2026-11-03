@@ -21,8 +21,12 @@ const outcomes: Record<string, string> = {
     "Op de gekozen neerlegplek staat een object of agent, of het terrein is ongeschikt.",
   NOT_OWNER: "De agent draagt dit object niet.",
 };
-export const outcomeReason = (error?: string) =>
-  error ? (outcomes[error] ?? error) : "";
+export const outcomeReason = (error?: string) => {
+  if (!error) return "";
+  if (/CODEX_RATE_LIMITED|\b429\b|too many requests/i.test(error))
+    return "Codex heeft de aanvraaglimiet bereikt (429). De agents wachten tijdelijk en proberen het daarna automatisch opnieuw.";
+  return outcomes[error] ?? error;
+};
 export function actionTitle(action: WorldActionInput) {
   switch (action.type) {
     case "craft":

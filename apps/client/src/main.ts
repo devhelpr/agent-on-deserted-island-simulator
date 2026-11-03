@@ -124,7 +124,7 @@ function updateStatus(next: SimulationStatus) {
     ? codex
         .map(
           (session) =>
-            `${session.agentId}: Codex · ${session.status === "thinking" ? "Denkt na" : session.status === "failed" ? "Fout: " + session.lastError : "Klaar"} · ${session.decisions} besluiten${session.threadId ? " · thread " + session.threadId.slice(0, 8) : ""}`,
+            `${session.agentId}: Codex · ${session.status === "thinking" ? "Denkt na" : session.status === "failed" ? "Fout: " + outcomeReason(session.lastError) : "Klaar"} · ${session.decisions} besluiten${session.threadId ? " · thread " + session.threadId.slice(0, 8) : ""}`,
         )
         .join(" / ")
     : "Scripted agents · geen modelaanroepen";

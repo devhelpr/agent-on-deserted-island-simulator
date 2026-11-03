@@ -30,6 +30,7 @@ export interface ModelDecision extends ActionExplanation {
 }
 interface ActiveTurn {
   completing?: boolean;
+  finished?: boolean;
   agentId: string;
   threadId: string;
   turnId: string | null;
@@ -66,10 +67,16 @@ export class CodexAdapter {
   private readonly sessions = new Map<string, AgentSessionStatus>();
   private readonly active = new Map<string, ActiveTurn>();
   private readonly busy = new Set<string>();
+  private rateLimitedUntil = 0;
+  private rateLimitFailures = 0;
   constructor(
     private readonly factory: RuntimeFactory = createIsolatedRuntime,
     private readonly timeoutMs = 60000,
   ) {}
+  /** Wall-clock backoff shared by all agents using this runtime. */
+  canDecide(): boolean {
+    return !this.disposed && Date.now() >= this.rateLimitedUntil;
+  }
   statuses(): AgentSessionStatus[] {
     return structuredClone([...this.sessions.values()]);
   }
@@ -156,6 +163,7 @@ export class CodexAdapter {
         2000,
       );
     if (message.method === "turn/completed") {
+      context.finished = true;
       const turn = params.turn;
       context.turnId = turn?.id ?? context.turnId;
       context.record.turnId = context.turnId ?? undefined;
@@ -230,6 +238,8 @@ export class CodexAdapter {
     observation: AgentObservation,
     signal?: AbortSignal,
   ): Promise<ModelDecision> {
+    if (!this.canDecide())
+      throw new Error(this.disposed ? "CODEX_CLOSED" : "CODEX_RATE_LIMITED");
     const id = observation.agentId;
     const started = performance.now();
     const record = this.journal.begin(observation);
@@ -360,18 +370,38 @@ export class CodexAdapter {
         record.status = "proposed";
         session.decisions++;
         session.status = "idle";
+        // An already-running successful turn must not clear another agent's backoff.
+        if (Date.now() >= this.rateLimitedUntil) this.rateLimitFailures = 0;
         return decision;
       } finally {
         controller.signal.removeEventListener("abort", onAbort);
       }
     } catch (error) {
-      const code = controller.signal.aborted
+      let code = controller.signal.aborted
         ? controller.signal.reason instanceof Error
           ? controller.signal.reason.message
           : "DECISION_CANCELLED"
         : error instanceof Error
           ? error.message
           : "CODEX_DECISION_FAILED";
+      if (
+        !controller.signal.aborted &&
+        /\b429\b|too many requests|rate[ _-]?limit(?:ed|[ _-]exceeded)?/i.test(
+          code,
+        )
+      ) {
+        const now = Date.now();
+        // Concurrent failures belong to one retry wave, not three backoff steps.
+        if (now >= this.rateLimitedUntil) {
+          this.rateLimitFailures = Math.min(this.rateLimitFailures + 1, 5);
+          const delay = Math.min(
+            300000,
+            30000 * 2 ** (this.rateLimitFailures - 1) + Math.random() * 5000,
+          );
+          this.rateLimitedUntil = now + delay;
+        }
+        code = `CODEX_RATE_LIMITED:${code}`;
+      }
       record.error = code.slice(0, 500);
       record.status =
         code === "DECISION_CANCELLED" || signal?.aborted
@@ -380,7 +410,7 @@ export class CodexAdapter {
       session.status = record.status === "cancelled" ? "idle" : "failed";
       session.lastError = record.error;
       const turnId = context?.turnId;
-      if (turnId && this.rpc?.isAlive())
+      if (!context?.finished && turnId && this.rpc?.isAlive())
         await this.rpc
           .request(
             "turn/interrupt",
@@ -388,7 +418,8 @@ export class CodexAdapter {
             AbortSignal.timeout(2000),
           )
           .catch(() => this.runtime?.rpc.close());
-      else if (context && this.runtime) await this.runtime.rpc.close();
+      else if (context && !context.finished && this.runtime)
+        await this.runtime.rpc.close();
       throw new Error(record.error);
     } finally {
       clearTimeout(timeout);
