@@ -6,7 +6,6 @@ import {
 } from "../../../../packages/shared/src/index.js";
 import {
   createWorldToolSession,
-  dynamicWorldTools,
   type WorldToolSession,
 } from "../../../../packages/world-mcp/src/server.js";
 import type {
@@ -54,13 +53,10 @@ instructions.`,
 motivation. Return a JSON object with action, motivation and
 artifactConsiderations matching the supplied output schema; use an empty
 array when there are no artifact candidates. The host dispatches that
-operation to your identity-bound world MCP session. If direct world_* tools
-are available you may call one instead, then finish with the matching JSON
-object. world_observe is optional because the prompt already contains your
-observation. Tools stage proposals; execution occurs at the next simulation
-tick and the next observation contains lastAction with the result. Do not
-keep polling or call a second action in the same turn. Never invent
-successful results. Do not attempt any non-world tool.`,
+operation to your identity-bound world MCP session. Do not call tools: all
+observations are already in the prompt. The host stages your JSON action for execution at the next
+simulation tick; the next observation contains lastAction with the result.
+Never invent successful results.`,
   `When other inhabitants are visible, exchange useful landmark locations with
 them using world_communicate; coordinate exploration and avoid fighting over
 owned objects. A delivered message is reported knowledge, not verified fact.
@@ -120,7 +116,7 @@ const sessionSettings = (cwd: string) => ({
   baseInstructions: INSTRUCTIONS,
 });
 /**
- * Adapter for Codex CLI 0.161 app-server v2 + experimental dynamic tool calls.
+ * Adapter for Codex CLI 0.161 app-server v2 structured decisions.
  */
 export class CodexAdapter {
   readonly journal = new DecisionJournal();
@@ -132,15 +128,25 @@ export class CodexAdapter {
   private readonly sessions = new Map<string, AgentSessionStatus>();
   private readonly active = new Map<string, ActiveTurn>();
   private readonly busy = new Set<string>();
+  private nextDecisionAt = 0;
   private rateLimitedUntil = 0;
   private rateLimitFailures = 0;
   constructor(
     private readonly factory: RuntimeFactory = createIsolatedRuntime,
     private readonly timeoutMs = 60000,
-  ) {}
-  /** Wall-clock backoff shared by all agents using this runtime. */
+    private readonly minDecisionIntervalMs = Number(
+      process.env.AGENT_ISLAND_CODEX_MIN_DECISION_INTERVAL_MS ?? 10000,
+    ),
+  ) {
+    if (!Number.isFinite(minDecisionIntervalMs) || minDecisionIntervalMs < 0)
+      throw new Error("INVALID_CODEX_MIN_DECISION_INTERVAL_MS");
+  }
+  /** Wall-clock pacing and backoff shared by all agents using this runtime. */
   canDecide(): boolean {
-    return !this.disposed && Date.now() >= this.rateLimitedUntil;
+    return (
+      !this.disposed &&
+      Date.now() >= Math.max(this.rateLimitedUntil, this.nextDecisionAt)
+    );
   }
   statuses(): AgentSessionStatus[] {
     return structuredClone([...this.sessions.values()]);
@@ -163,7 +169,9 @@ export class CodexAdapter {
       }
       const rpc = this.runtime.rpc;
       this.rpc = rpc;
-      rpc.onRequest((message) => this.handleRequest(message));
+      rpc.onRequest(async () => {
+        throw new Error("REQUEST_NOT_ALLOWED");
+      });
       this.unsubscribe = rpc.onNotification((message) =>
         this.notification(message),
       );
@@ -244,68 +252,39 @@ export class CodexAdapter {
       if (context.completing) return;
       context.completing = true;
       void (async () => {
-        let proposal = context.tools.proposed();
-        if (!proposal) {
-          let output: unknown;
-          try {
-            output = JSON.parse(context.record.publicMessage ?? "");
-          } catch {
-            throw new Error("INVALID_STRUCTURED_DECISION");
-          }
-          const parsed = codexDecisionSchema.safeParse(output);
-          if (!parsed.success) throw new Error("INVALID_STRUCTURED_DECISION");
-          const { type, ...input } = parsed.data.action;
-          const result = await context.tools.call(`world_${type}`, {
-            ...input,
-            motivation: parsed.data.motivation,
-            ...(parsed.data.artifactConsiderations
-              ? { artifactConsiderations: parsed.data.artifactConsiderations }
-              : {}),
-          });
-          if (!result.success) throw new Error("WORLD_TOOL_REJECTED");
-          proposal = context.tools.proposed();
+        let output: unknown;
+        try {
+          output = JSON.parse(context.record.publicMessage ?? "");
+        } catch {
+          throw new Error("INVALID_STRUCTURED_DECISION");
         }
+        const parsed = codexDecisionSchema.safeParse(output);
+        if (!parsed.success) throw new Error("INVALID_STRUCTURED_DECISION");
+        const { type, ...input } = parsed.data.action;
+        const result = await context.tools.call(`world_${type}`, {
+          ...input,
+          motivation: parsed.data.motivation,
+          artifactConsiderations: parsed.data.artifactConsiderations,
+        });
+        if (!result.success) throw new Error("WORLD_TOOL_REJECTED");
+        const proposal = context.tools.proposed();
         if (!proposal) throw new Error("NO_WORLD_ACTION");
         context.resolve({ ...proposal, record: context.record });
       })().catch(context.reject);
     }
-  }
-  private async handleRequest(message: RpcMessage) {
-    if (message.method !== "item/tool/call")
-      throw new Error("REQUEST_NOT_ALLOWED");
-    const p = message.params;
-    const context = this.active.get(p?.threadId);
-    if (
-      !context ||
-      (context.turnId && context.turnId !== p.turnId) ||
-      p.namespace != null ||
-      typeof p.tool !== "string"
-    )
-      return {
-        contentItems: [
-          { type: "inputText", text: '{"error":"TOOL_SCOPE_DENIED"}' },
-        ],
-        success: false,
-      };
-    context.turnId = p.turnId;
-    context.record.turnId = p.turnId;
-    if (context.record.tools.length >= 12)
-      return {
-        contentItems: [
-          { type: "inputText", text: '{"error":"TOOL_BUDGET_EXCEEDED"}' },
-        ],
-        success: false,
-      };
-    const session = this.sessions.get(context.agentId)!;
-    session.turnId = p.turnId;
-    return context.tools.call(p.tool, p.arguments);
   }
   async decide(
     observation: AgentObservation,
     signal?: AbortSignal,
   ): Promise<ModelDecision> {
     if (!this.canDecide())
-      throw new Error(this.disposed ? "CODEX_CLOSED" : "CODEX_RATE_LIMITED");
+      throw new Error(
+        this.disposed
+          ? "CODEX_CLOSED"
+          : Date.now() < this.rateLimitedUntil
+            ? "CODEX_RATE_LIMITED"
+            : "CODEX_THROTTLED",
+      );
     const id = observation.agentId;
     const started = performance.now();
     const record = this.journal.begin(observation);
@@ -316,6 +295,8 @@ export class CodexAdapter {
       this.journal.changed(record);
       throw new Error(record.error);
     }
+    // Reserve the shared slot before the first await so agents cannot burst.
+    this.nextDecisionAt = Date.now() + this.minDecisionIntervalMs;
     this.busy.add(id);
     const session: AgentSessionStatus = this.sessions.get(id) ?? {
       agentId: id,
@@ -365,7 +346,7 @@ export class CodexAdapter {
       if (!session.threadId) {
         const result = await rpc.request(
           "thread/start",
-          { ...settings, dynamicTools: dynamicWorldTools() },
+          { ...settings, dynamicTools: [] },
           controller.signal,
         );
         if (

@@ -40,7 +40,12 @@ Stuur dit naar `POST /api/simulations`. De overige agents blijven scripted. Stop
 6. Een interne MCP-client en MCP-server communiceren via de SDK InMemoryTransport. De sessie is aan deze ene agentwaarneming gebonden en accepteert maximaal één actievoorstel.
 7. De scheduler dient het voorstel centraal in. Afstand, zicht, eigendom, obstakels en conflicten worden opnieuw door World Engine gecontroleerd. De volgende waarneming bevat `lastAction`, inclusief uitvoering, fout of inspectieresultaat.
 
-De adapter ondersteunt ook het experimentele `item/tool/call`-pad voor native dynamische tools en test dit met een protocolfixture. De echte acceptatieproef gebruikt de gestructureerde besluitroute via MCP: in de strikt geïsoleerde configuratie bood de geteste CLI-versie de dynamische wereldtools niet rechtstreeks aan het model aan. De Code Mode-host blijft expliciet uitgeschakeld. Een modeltekst zoals “ik ga noordwaarts” zonder geldig JSON-besluit of toolvoorstel leidt niet tot een wereldactie.
+Codex krijgt geen dynamische wereldtools aangeboden en retourneert uitsluitend
+het gestructureerde JSON-besluit. De host valideert dit en voert zelf de
+wereld-MCP-aanroep uit. Modeltoolrequests worden afgewezen. Dit voorkomt een
+extra modelronde voor het verwerken van een toolresultaat. De Code Mode-host
+blijft expliciet uitgeschakeld. Modeltekst zonder geldig JSON-besluit leidt
+niet tot een wereldactie.
 
 De outputschema's gebruiken een unie met `anyOf`, omdat de geteste strikte modelrespons de door Zod-discriminatedUnion gegenereerde `oneOf` afwees. Runtimevalidatie blijft strikt.
 
@@ -48,17 +53,17 @@ De outputschema's gebruiken een unie met `anyOf`, omdat de geteste strikte model
 
 `packages/world-mcp` is een echte MCP-server met gevalideerde tools. De naam van de actor komt uit de sessie, nooit uit modelargumenten. Er is geen openbare MCP-HTTP-poort.
 
-| Tool | Functie |
-| --- | --- |
-| `world_observe` | Alleen de eigen gefilterde turnwaarneming |
-| `world_move` | Een doelpositie voorstellen |
-| `world_inspect` | Inspectie van een geobserveerd object voorstellen |
-| `world_interact` | Een geobserveerd artefact activeren |
-| `world_pickup` | Een geobserveerde steen oppakken |
-| `world_drop` | Een eigen inventarisobject neerleggen |
-| `world_communicate` | Bericht aan een momenteel zichtbare agent |
-| `world_look` | Draaien, met nieuwe waarneming in de volgende turn |
-| `world_wait` | Virtueel wachten |
+| Tool                | Functie                                            |
+| ------------------- | -------------------------------------------------- |
+| `world_observe`     | Alleen de eigen gefilterde turnwaarneming          |
+| `world_move`        | Een doelpositie voorstellen                        |
+| `world_inspect`     | Inspectie van een geobserveerd object voorstellen  |
+| `world_interact`    | Een geobserveerd artefact activeren                |
+| `world_pickup`      | Een geobserveerde steen oppakken                   |
+| `world_drop`        | Een eigen inventarisobject neerleggen              |
+| `world_communicate` | Bericht aan een momenteel zichtbare agent          |
+| `world_look`        | Draaien, met nieuwe waarneming in de volgende turn |
+| `world_wait`        | Virtueel wachten                                   |
 
 Verborgen object-ID's kunnen niet via inspectieverzoeken worden afgetast: de MCP-grens vereist dat het object in deze waarneming voorkomt. Communicatie vereist een zichtbare ontvanger; World Engine controleert dit opnieuw bij uitvoering. Berichten staan uitsluitend in de inbox van de ontvanger. Bereik is voorlopig hetzelfde als zicht (25 m, 120° en objectocclusie); uitgebreidere communicatie hoort bij mijlpaal 6.
 
@@ -69,6 +74,16 @@ Elke Codex-run krijgt een tijdelijke runtime-home en een lege werkmap met direct
 Het profiel `island` weigert bestandstoegang vanaf `:root` en commandonetwerktoegang. Shell/unified exec, lokale imageviewer, browser, computer use, plugins, apps, multi-agentdelegatie, geheugenimport, hooks, workspace dependencies en Code Mode-host staan uit. Threadresponses moeten het profiel `island` en `approvalPolicy: never` bevestigen. Niet-wereldtoolrequests worden afgewezen; bij een onverwachte hosttoolactiviteit wordt de runtime afgesloten. Dit wijzigt uitsluitend de eigen eilandruntime en verleent geen nieuwe rechten aan andere Codex-sessies. Zie [OpenAI Docs — configuratie](https://learn.chatgpt.com/docs/config-file/config-reference).
 
 De adapter heeft een deadline van 60 echte seconden per besluit en begrensde RPC-verzoeken. De scheduler heeft een ruimere deadline van 90 seconden en valt bij falen terug op een korte virtuele wachtactie. Annulering bereikt de echte modelturn via `turn/interrupt`; een niet reagerende verbinding wordt gesloten. Late resultaten worden niet alsnog uitgevoerd. De standaard scripted tests maken geen modelaanroepen.
+
+Nieuwe Codex-besluiten starten standaard minimaal 10 echte seconden na elkaar,
+gedeeld door alle Codex-agents binnen dezelfde run. Het interval wordt gemeten
+tussen starts, niet vanaf het einde van een besluit. Stel dit serverzijdig in
+met `AGENT_ISLAND_CODEX_MIN_DECISION_INTERVAL_MS` (milliseconden; standaard
+`10000`, `0` schakelt deze begrenzing uit). De waarde moet eindig en niet-negatief
+zijn. Herstart de server om de instelling toe te passen. Simulatiesnelheid en
+cyclusresets verkorten het interval niet. Tijdens het wachten verbruikt de
+scheduler geen beslispogingen; scripted agents kunnen doorgaan. De begrenzing
+geldt per run, niet over meerdere runs of andere Codex-sessies heen.
 
 Bij `429 Too Many Requests` heeft de CLI zijn eigen retries al doorlopen. De adapter blokkeert daarna nieuwe Codex-besluiten voor alle agents binnen dezelfde run: eerst 30 seconden plus maximaal 5 seconden willekeurige spreiding, bij opeenvolgende mislukte pogingen oplopend tot maximaal 5 minuten. Dit is echte tijd, onafhankelijk van de simulatiesnelheid. Tijdens deze wachttijd worden geen modelaanroepen gestart of beslispogingen van het experimentbudget verbruikt; scripted agents kunnen doorgaan. Bestaande modelturns mogen afronden. Na de wachttijd probeert de scheduler automatisch opnieuw; een geslaagde poging na de wachttijd herstelt de oorspronkelijke wachttijd. Een cyclusreset heft een actieve wachttijd niet op. Afgeronde mislukte turns worden niet opnieuw onderbroken en hun threads blijven beschikbaar. Het dashboard vertaalt de fout naar een leesbare melding; het beslisrecord behoudt de technische fout achter `CODEX_RATE_LIMITED`. Zie [OpenAI Docs — rate limits](https://developers.openai.com/api/docs/guides/rate-limits). Deze afhandeling vermindert herhaalde aanvragen, maar verhoogt geen accountlimieten en verhelpt geen uitgeput quotum.
 

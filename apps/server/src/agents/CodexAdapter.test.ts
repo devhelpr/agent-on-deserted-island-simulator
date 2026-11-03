@@ -26,7 +26,6 @@ class FakeRpc implements RpcTransport {
   mode:
     "normal" | "hang" | "empty" | "forbidden" | "early" | "json" | "rateLimit" =
     "normal";
-  seenToolResult: any;
   async request<T = any>(method: string, params: any): Promise<T> {
     this.calls.push({ method, params });
     if (method === "thread/start")
@@ -74,21 +73,6 @@ class FakeRpc implements RpcTransport {
           });
           return;
         }
-        if (this.mode !== "empty" && this.mode !== "json")
-          this.seenToolResult = await this.handler({
-            id: 99,
-            method: "item/tool/call",
-            params: {
-              threadId: params.threadId,
-              turnId: id,
-              namespace: null,
-              tool: "world_move",
-              arguments: {
-                target: { x: 10, y: 0, z: 10 },
-                motivation: "Explore",
-              },
-            },
-          });
         this.emit("item/completed", {
           threadId: params.threadId,
           item: {
@@ -101,7 +85,7 @@ class FakeRpc implements RpcTransport {
           item: {
             type: "agentMessage",
             text:
-              this.mode === "json"
+              this.mode !== "empty"
                 ? JSON.stringify({
                     action: { type: "move", target: { x: 10, y: 0, z: 10 } },
                     motivation: "Explore via MCP",
@@ -151,15 +135,72 @@ class FakeRpc implements RpcTransport {
     this.emit("transport/closed", {});
   }
 }
-const setup = (timeout = 1000) => {
+const setup = (timeout = 1000, minDecisionIntervalMs = 0) => {
   const rpc = new FakeRpc();
   const adapter = new CodexAdapter(
     async () => ({ rpc, cwd: "/private/island", close: () => rpc.close() }),
     timeout,
+    minDecisionIntervalMs,
   );
   return { rpc, adapter };
 };
 describe("Codex decisions", () => {
+  it("spaces decision starts across agents in wall time and preserves pacing on reset", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000000);
+    const { rpc, adapter } = setup(1000, 10000);
+    try {
+      const first = adapter.decide(observation());
+      await expect(adapter.decide(observation("beta"))).rejects.toThrow(
+        "CODEX_THROTTLED",
+      );
+      await first;
+      expect(adapter.canDecide()).toBe(false);
+      expect(rpc.turns).toBe(1);
+      expect(adapter.journal.list()).toHaveLength(1);
+      await adapter.resetCycle();
+      vi.setSystemTime(1009999);
+      expect(adapter.canDecide()).toBe(false);
+      vi.setSystemTime(1010000);
+      expect(adapter.canDecide()).toBe(true);
+      await adapter.decide(observation("beta"));
+      expect(rpc.turns).toBe(2);
+    } finally {
+      await adapter.close();
+      vi.useRealTimers();
+    }
+  });
+  it("does not spend experiment attempts while paced at accelerated speed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000000);
+    const { rpc, adapter } = setup(1000, 10000);
+    const sim = new Simulation("paced", 0, 20, "live", undefined, {
+      adapter,
+      controller: "codex",
+      agentCount: 1,
+      definition: flatWorld(),
+      experiment: { maxCycles: 1, decisionBudgetPerAgentPerCycle: 5 },
+    });
+    const settle = async () => {
+      for (let i = 0; i < 100 && sim.scheduler!.pendingAgents().length; i++)
+        await new Promise((done) => setTimeout(done, 1));
+    };
+    try {
+      sim.advance(50);
+      await settle();
+      for (let now = 100; now <= 5000; now += 50) sim.advance(now);
+      expect(rpc.turns).toBe(1);
+      expect(sim.status().experiment!.decisionsUsed).toEqual({ alpha: 1 });
+      vi.setSystemTime(1010000);
+      sim.advance(5050);
+      await settle();
+      expect(rpc.turns).toBe(2);
+      expect(sim.status().experiment!.decisionsUsed).toEqual({ alpha: 2 });
+    } finally {
+      await sim.shutdown();
+      vi.useRealTimers();
+    }
+  });
   it("runs only Alpha in solo mode, including after a cycle reset", async () => {
     const { rpc, adapter } = setup();
     const store = new SimulationStore();
@@ -286,22 +327,19 @@ describe("Codex decisions", () => {
       vi.useRealTimers();
     }
   });
-  it("uses isolated thread settings, MCP tools, public motivation and resumes its own thread", async () => {
+  it("uses isolated thread settings, JSON decisions, public motivation and resumes its own thread", async () => {
     const { rpc, adapter } = setup();
     try {
       const first = await adapter.decide(observation());
       expect(first.action.type).toBe("move");
-      expect(first.motivation).toBe("Explore");
-      expect(rpc.seenToolResult.success).toBe(true);
+      expect(first.motivation).toBe("Explore via MCP");
       const start = rpc.calls.find((c) => c.method === "thread/start")!.params;
       expect(start).toMatchObject({
         permissions: "island",
         approvalPolicy: "never",
         runtimeWorkspaceRoots: [],
       });
-      expect(
-        start.dynamicTools.every((t: any) => t.name.startsWith("world_")),
-      ).toBe(true);
+      expect(start.dynamicTools).toEqual([]);
       await adapter.decide(observation());
       expect(rpc.calls.some((c) => c.method === "thread/resume")).toBe(true);
       expect(rpc.threads).toBe(1);
@@ -309,9 +347,9 @@ describe("Codex decisions", () => {
       expect(JSON.stringify(adapter.journal.list())).not.toContain(
         "PRIVATE_REASONING",
       );
-      expect(adapter.journal.list()[0]!.publicMessage).toBe(
-        "Exploring a new area.",
-      );
+      expect(
+        JSON.parse(adapter.journal.list()[0]!.publicMessage!).action.type,
+      ).toBe("move");
     } finally {
       await adapter.close();
     }
@@ -344,7 +382,7 @@ describe("Codex decisions", () => {
       await adapter.close();
     }
   });
-  it("keeps separate threads and denies unknown thread, namespace and identity overrides", async () => {
+  it("keeps separate threads and rejects model tool calls", async () => {
     const { rpc, adapter } = setup();
     try {
       await Promise.all([
@@ -353,23 +391,21 @@ describe("Codex decisions", () => {
       ]);
       expect(rpc.threads).toBe(2);
       expect(new Set(adapter.statuses().map((s) => s.threadId)).size).toBe(2);
-      expect(
-        (
-          await rpc.handler({
-            method: "item/tool/call",
-            params: {
-              threadId: "unknown",
-              tool: "world_observe",
-              arguments: {},
-            },
-          })
-        ).success,
-      ).toBe(false);
+      await expect(
+        rpc.handler({
+          method: "item/tool/call",
+          params: {
+            threadId: adapter.statuses()[0]!.threadId,
+            tool: "world_move",
+            arguments: { target: { x: 10, y: 0, z: 10 } },
+          },
+        }),
+      ).rejects.toThrow("REQUEST_NOT_ALLOWED");
     } finally {
       await adapter.close();
     }
   });
-  it("handles tool requests and completion before turn/start returns", async () => {
+  it("handles JSON completion before turn/start returns", async () => {
     const { rpc, adapter } = setup();
     rpc.mode = "early";
     try {

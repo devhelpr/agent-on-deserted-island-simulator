@@ -78,6 +78,12 @@ The clock processes at most 100 ticks per pump and retains at most 5 seconds of 
 
 In **Live** mode, the world keeps running while agents decide. In **Experiment** mode, a tick waits until all decisions required at that point are ready. They are then submitted in agent-ID order. Time spent waiting at a decision barrier is not caught up later. Each agent can have at most one decision in progress. A failed decision, or one exceeding its configured deadline (10 s for scripted policies, 60 s for the Codex adapter), falls back to a short virtual wait action. Stopping or changing the decision mode invalidates any older results that arrive later.
 
+Codex returns a structured JSON decision; the host dispatches the world action
+without a model tool round trip. Decision starts are spaced by at least 10
+wall-clock seconds across all Codex agents in a run. Set
+`AGENT_ISLAND_CODEX_MIN_DECISION_INTERVAL_MS` on the server to adjust this
+interval (`10000` by default, `0` disables pacing).
+
 After a Codex 429 rate-limit failure, all Codex agents within that run share a wall-clock cooldown, starting at roughly 30 seconds and increasing to at most 5 minutes on repeated failures. The scheduler resumes automatically after the cooldown without spending decision attempts while waiting. Simulation speed does not shorten this delay; scripted agents can continue. See the [Codex runtime guide](docs/codex-runtime.md).
 
 ## World, navigation, and interactions
@@ -92,16 +98,16 @@ Supported actions: `move`, `look`, `wait`, `inspect`, `interact` (activate an ar
 
 Trees and unowned rocks each contain six material units. `gather` collects one wood/stone; an axe/pickaxe in the bag collects two. Depleted sources remain landmarks. `craft` takes a recipe ID, consumes only the agent's own materials atomically and creates bag items. Missing materials, insufficient bag capacity or a missing station leave the inventory intact. Observations include all recipes, missing ingredients, station availability and current craftability; both Codex and scripted agents can use them.
 
-| Recipe | Ingredients | Result / use |
-| --- | --- | --- |
-| `plank` | 1 wood | 2 planks for construction |
-| `rope` | 2 fiber | 1 rope for binding |
-| `axe` | 1 wood + 2 stone + 1 rope | Doubles wood gathering |
-| `workbench` | 4 planks + 1 rope | Place nearby for advanced crafting |
-| `pickaxe` | 2 wood + 3 stone + 1 rope; nearby placed workbench | Doubles stone gathering |
-| `torch` | 1 wood + 1 resin + 1 fiber | Activate while carrying for 35 m sight |
-| `basket` | 3 fiber + 2 rope | Adds 12 bag slots while carried |
-| `campfire` | 3 wood + 3 stone + 1 flint | Place and activate for 35 m sight within 10 m |
+| Recipe      | Ingredients                                        | Result / use                                  |
+| ----------- | -------------------------------------------------- | --------------------------------------------- |
+| `plank`     | 1 wood                                             | 2 planks for construction                     |
+| `rope`      | 2 fiber                                            | 1 rope for binding                            |
+| `axe`       | 1 wood + 2 stone + 1 rope                          | Doubles wood gathering                        |
+| `workbench` | 4 planks + 1 rope                                  | Place nearby for advanced crafting            |
+| `pickaxe`   | 2 wood + 3 stone + 1 rope; nearby placed workbench | Doubles stone gathering                       |
+| `torch`     | 1 wood + 1 resin + 1 fiber                         | Activate while carrying for 35 m sight        |
+| `basket`    | 3 fiber + 2 rope                                   | Adds 12 bag slots while carried               |
+| `campfire`  | 3 wood + 3 stone + 1 flint                         | Place and activate for 35 m sight within 10 m |
 
 Crafted items, consumed materials, source depletion and lighting persist in checkpoints and replays and reset with the world each cycle. Recipes are deliberately bounded rules; agents choose their own projects and combinations of actions.
 
@@ -115,30 +121,30 @@ After a restart, existing runs are restored in a paused state, including positio
 
 Perception-based consolidation is deterministic and makes no additional model call: visible objects produce semantic location claims, an agent's own action results produce episodic memories, successful moves produce procedural route hypotheses, and received messages produce reported claims. Duplicate claims share sources and revisions; new direct location observations supersede older claims, while other contradictions remain marked. Context contains a bounded summary, relevant memories belonging to the agent, recent experiences, and goals. Model-generated summaries are future work. See the [milestone 4 acceptance report](docs/sprint-4-acceptance.md).
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/health` | Server status |
-| GET | `/api/world` | Default run snapshot; compatibility alias |
-| GET | `/api/worlds` | Available world |
-| GET / POST | `/api/simulations` | List runs / create a new run |
-| GET | `/api/simulations/:id` | Clock and status |
-| GET | `/api/simulations/:id/world` | World definition, runtime state, and status |
-| GET | `/api/simulations/:id/agents` | Agents |
-| GET | `/api/simulations/:id/replays` | Recorded cycles and available tick ranges |
-| GET | `/api/simulations/:id/replays/:cycleId?tick=1200&agentId=alpha` | Verified historical state, optional agent POV, decisions, and discovered objects |
-| GET | `/api/simulations/:id/results` | Experiment progress and per-agent metrics for every cycle |
-| GET | `/api/simulations/:id/timeline?cycleId=...&after=0` | Up to 200 durable events after a sequence cursor, scoped to the run |
-| POST | `/api/simulations/:id/pause`, `/resume`, `/stop` | Control a run |
-| PATCH | `/api/simulations/:id/speed` | `{ "timeScale": 1/2/5/10/20 }` |
-| PATCH | `/api/simulations/:id/mode` | `{ "schedulerMode": "live"/"experiment" }` |
-| POST | `/api/simulations/:id/reset` | Close the cycle, consolidate memory, and restore the initial world |
-| GET | `/api/simulations/:id/agents/:agentId/memories?q=cave` | The agent's active memories, optionally searched with FTS |
-| GET | `/api/simulations/:id/agents/:agentId/memory-context` | Summary, relevant memories, recent experiences, and goals |
-| GET | `/api/simulations/:id/agents/:agentId/decisions` | Durable decisions across all cycles, including outcomes |
-| GET | `/api/simulations/:id/agents/:agentId/observation` | Limited current observation |
-| POST | `/api/simulations/:id/agents/:agentId/actions` | Submit a Zod-validated action |
-| GET | `/api/simulations/:id/actions/:actionId` | Action result |
-| POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Cancel a pending action |
+| Method     | Endpoint                                                        | Purpose                                                                          |
+| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| GET        | `/api/health`                                                   | Server status                                                                    |
+| GET        | `/api/world`                                                    | Default run snapshot; compatibility alias                                        |
+| GET        | `/api/worlds`                                                   | Available world                                                                  |
+| GET / POST | `/api/simulations`                                              | List runs / create a new run                                                     |
+| GET        | `/api/simulations/:id`                                          | Clock and status                                                                 |
+| GET        | `/api/simulations/:id/world`                                    | World definition, runtime state, and status                                      |
+| GET        | `/api/simulations/:id/agents`                                   | Agents                                                                           |
+| GET        | `/api/simulations/:id/replays`                                  | Recorded cycles and available tick ranges                                        |
+| GET        | `/api/simulations/:id/replays/:cycleId?tick=1200&agentId=alpha` | Verified historical state, optional agent POV, decisions, and discovered objects |
+| GET        | `/api/simulations/:id/results`                                  | Experiment progress and per-agent metrics for every cycle                        |
+| GET        | `/api/simulations/:id/timeline?cycleId=...&after=0`             | Up to 200 durable events after a sequence cursor, scoped to the run              |
+| POST       | `/api/simulations/:id/pause`, `/resume`, `/stop`                | Control a run                                                                    |
+| PATCH      | `/api/simulations/:id/speed`                                    | `{ "timeScale": 1/2/5/10/20 }`                                                   |
+| PATCH      | `/api/simulations/:id/mode`                                     | `{ "schedulerMode": "live"/"experiment" }`                                       |
+| POST       | `/api/simulations/:id/reset`                                    | Close the cycle, consolidate memory, and restore the initial world               |
+| GET        | `/api/simulations/:id/agents/:agentId/memories?q=cave`          | The agent's active memories, optionally searched with FTS                        |
+| GET        | `/api/simulations/:id/agents/:agentId/memory-context`           | Summary, relevant memories, recent experiences, and goals                        |
+| GET        | `/api/simulations/:id/agents/:agentId/decisions`                | Durable decisions across all cycles, including outcomes                          |
+| GET        | `/api/simulations/:id/agents/:agentId/observation`              | Limited current observation                                                      |
+| POST       | `/api/simulations/:id/agents/:agentId/actions`                  | Submit a Zod-validated action                                                    |
+| GET        | `/api/simulations/:id/actions/:actionId`                        | Action result                                                                    |
+| POST       | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Cancel a pending action                                                          |
 
 A new run optionally accepts `worldId: "island-48291-v4"` (legacy IDs remain accepted as aliases for new runs), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). Pass `codexAgentIds: ["alpha", "beta", "gamma"]` for three Codex agents and `experiment: { "maxCycles": 2, "decisionBudgetPerAgentPerCycle": 120 }` to bound the experiment (1–100 cycles, 1–10,000 attempts per agent per cycle). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
 
