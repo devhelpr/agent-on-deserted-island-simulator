@@ -186,7 +186,7 @@ function update(next: WorldStateDto) {
       card.type = "button";
       card.id = `agent-${agent.id}`;
       card.className = `agent-card agent-${agent.id}`;
-      card.innerHTML = `<div class="agent-title"><span class="avatar"></span><span><strong></strong><small>Scripted testagent</small></span><span class="agent-arrow">↗</span></div><div class="agent-status"></div><div class="coordinates"><span>POSITIE · X / Y / Z</span><code></code></div><div class="agent-footer"></div><p class="agent-intent"></p>`;
+      card.innerHTML = `<div class="agent-title"><span class="avatar"></span><span><strong></strong><small>Scripted testagent</small></span><span class="agent-arrow">↗</span></div><div class="agent-status"></div><div class="coordinates"><span>POSITIE · X / Y / Z</span><code></code></div><p class="agent-intent"></p>`;
       card.querySelector("strong")!.textContent = agent.name;
       card.querySelector(".avatar")!.textContent = agent.name[0]!;
       const id = agent.id;
@@ -199,12 +199,19 @@ function update(next: WorldStateDto) {
           `${agent.name} geselecteerd. Bekijk de actuele waarneming of annuleer de lopende actie.`;
         refreshControls();
       });
-      el("agents").append(card);
+      const panel = document.createElement("div");
+      panel.className = "agent-panel";
+      panel.append(card);
+      el("agents").append(panel);
     }
     card.querySelector("small")!.textContent =
       agent.controller === "codex" ? "Codex-agent" : "Scripted testagent";
     card.disabled = !scene;
     card.setAttribute("aria-pressed", String(selectedAgent === agent.id));
+    card.parentElement!.classList.toggle(
+      "selected",
+      selectedAgent === agent.id,
+    );
     card.querySelector(".agent-status")!.textContent = labels[agent.status];
     card.querySelector("code")!.textContent = [
       agent.position.x,
@@ -217,8 +224,6 @@ function update(next: WorldStateDto) {
       .map((id) => next.entities.find((e) => e.id === id))
       .filter((e) => e !== undefined);
     const capacity = inventoryCapacity(held);
-    card.querySelector(".agent-footer")!.textContent =
-      `${agent.inventory.length} / ${capacity} plekken in voorwerpentas`;
     let bag = document.getElementById(`bag-${agent.id}`);
     if (!bag) {
       bag = document.createElement("section");
@@ -267,7 +272,7 @@ function update(next: WorldStateDto) {
       groups.set(key, group);
     }
     bag.querySelector(".bag-summary")!.textContent =
-      `Voorwerpen · ${agent.inventory.length}/${capacity} · ${groups.size} soorten`;
+      `Voorwerpen · ${agent.inventory.length}/${capacity} · ${groups.size} ${groups.size === 1 ? "soort" : "soorten"}`;
     const signature = JSON.stringify([...groups]);
     if (bag.dataset.contents !== signature) {
       bag.dataset.contents = signature;
