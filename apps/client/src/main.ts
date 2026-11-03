@@ -1,6 +1,8 @@
 import {
   ITEMS,
   inventoryCapacity,
+  visionRange,
+  VISION_FIELD_OF_VIEW,
 } from "../../../packages/shared/src/index.js";
 import { io, type Socket } from "socket.io-client";
 import type {
@@ -27,7 +29,7 @@ app.innerHTML = `
 <header class="topbar"><a class="brand" href="/" aria-label="Agent Island home"><span class="brandmark">△</span><span>AGENT ISLAND<small>LOCAL SIMULATION LAB</small></span></a><div class="connection"><span class="dot" id="connection-dot"></span><span id="connection" role="status">Verbinden…</span></div><span class="sprint">FASE 06 <span>/</span> EXPERIMENTEN</span></header>
 <main><section class="workspace"><div class="workspace-heading"><div><p class="eyebrow">EXPERIMENT · SEED <span id="seed">—</span></p><h1>Samen op onbekend terrein.</h1><p class="intro">Eén eiland. Elke verkenner en elke actie telt.</p></div><span class="local-badge">LOCAL FIRST ↗</span></div>
 <div class="simulation-controls" aria-label="Simulatiebeheer"><label>Run<select id="run-select"><option value="sim-001">sim-001</option></select></label><button id="pause" type="button" disabled>Pauzeren</button><label>Snelheid<select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="20">20×</option></select></label><label>Besluitvorming<select id="mode"><option value="live">Live</option><option value="experiment">Experiment</option></select></label><button id="reset-cycle" type="button" disabled>Cyclus resetten</button><button id="stop" type="button" disabled>Stoppen</button><label>Nieuwe run met<select id="controller"><option value="scripted">Scripted agents</option><option value="codex">Codex Alpha + 2 scripted</option><option value="codex-solo">Alleen Codex Alpha</option><option value="codex-all">3 autonome Codex-agents</option></select></label><label>Cycli<input id="max-cycles" type="number" min="1" max="100" value="2" /></label><label>Besluiten / agent / cyclus<input id="decision-budget" type="number" min="1" max="10000" value="120" /></label><button id="new-run" type="button">Nieuwe run</button><span id="simulation-status" role="status">Verbinden…</span></div><p id="control-error" role="alert" hidden></p><p id="runtime-status" class="runtime-status" role="status"></p>
-<div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label" id="view-source"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle" id="view-camera">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen</span><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
+<div class="viewport-wrap"><div id="viewport"></div><div class="viewport-top"><span class="view-label" id="view-source"><span class="dot live"></span> LIVE WORLD</span><span class="view-label subtle" id="view-camera">FREE CAMERA</span></div><div id="scene-error" role="alert" hidden></div><div class="compass" aria-hidden="true">N<br><span>↑</span></div><div class="viewport-bottom"><span>Sleep om te draaien · Scroll om te zoomen<br><span id="sight-info">Gele waaier: kijkrichting en zichtbereik; obstakels blokkeren zicht.</span></span><button id="focus-agent" type="button">⌖ Volg agent</button><button id="reset-camera" type="button">↺ Overzicht</button></div></div>
 <div class="metrics"><div><span>WERELDTIJD</span><strong id="world-time">00:00</strong></div><div><span>SIMULATIETICK</span><strong id="tick">0</strong></div><div><span>EILAND</span><strong id="size">—</strong></div><div><span>OBJECTEN</span><strong id="entity-count">—</strong></div></div>
 <nav class="data-tabs" aria-label="Agentgegevens"><button id="live-tab" type="button" aria-pressed="true">Live</button><button id="timeline-tab" type="button" aria-pressed="false">Timeline</button><button id="results-tab" type="button" aria-pressed="false">Experiment</button><button id="replay-tab" type="button" aria-pressed="false">Replay</button><button id="memory-tab" type="button" aria-pressed="false">Geheugen</button></nav>
 <section id="timeline-panel" hidden aria-label="Historische tijdlijn"><h2>Timeline</h2><div class="simulation-controls"><label>Cyclus<select id="timeline-cycle"></select></label><button id="timeline-refresh" type="button">Vernieuwen</button><button id="timeline-more" type="button">Meer laden</button></div><ol id="history-events"></ol></section>
@@ -183,7 +185,13 @@ function update(next: WorldStateDto) {
     if (!next.agents.some((agent) => card?.id === `agent-${agent.id}`))
       panel.remove();
   }
+  scene?.selectAgent(selectedAgent);
   scene?.update(next);
+  button("focus-agent").disabled = !scene || !next.agents.length;
+  const viewedAgent = next.agents.find((a) => a.id === selectedAgent);
+  if (viewedAgent)
+    el("sight-info").textContent =
+      `${viewedAgent.name} · ${visionRange(viewedAgent, next.entities)} m / ${(VISION_FIELD_OF_VIEW * 180) / Math.PI}° · Gele waaier: kijkrichting; obstakels blokkeren zicht.`;
   el("entity-count").textContent = String(next.entities.length);
   el("items").textContent = String(
     next.entities.filter((e) => e.type === "item" && !e.ownerId).length,
@@ -217,6 +225,8 @@ function update(next: WorldStateDto) {
         if (!el("memory-panel").hidden)
           void loadMemory().catch((e) => error(String(e)));
         scene?.focusAgent(id);
+        if (state) update(state);
+        el("view-camera").textContent = `${agent.name.toUpperCase()} · VOLGEN`;
         el("observation").textContent =
           `${agent.name} geselecteerd. Bekijk de actuele waarneming of annuleer de lopende actie.`;
         refreshControls();
@@ -499,7 +509,14 @@ socket.on("world:delta", (data) => {
   }
 });
 socket.on("simulation:state", updateStatus);
-button("reset-camera").addEventListener("click", () => scene?.resetCamera());
+button("focus-agent").addEventListener("click", () => {
+  scene?.focusAgent(selectedAgent);
+  el("view-camera").textContent = `${selectedAgent.toUpperCase()} · VOLGEN`;
+});
+button("reset-camera").addEventListener("click", () => {
+  scene?.resetCamera();
+  el("view-camera").textContent = "FREE CAMERA";
+});
 button("pause").addEventListener(
   "click",
   () =>
@@ -676,7 +693,7 @@ button("observe").addEventListener(
         `/simulations/${simulationId}/agents/${selectedAgent}/observation`,
       );
       el("observation").textContent =
-        `Tick ${observation.tick} · ${observation.visibleEntities.length} objecten, ${observation.visibleAgents.length} agents zichtbaar. Bereik: 25 m / 120°. ${observation.visibleEntities.map((e: { id: string }) => e.id).join(", ") || "Geen objecten in beeld."}`;
+        `Tick ${observation.tick} · ${observation.visibleEntities.length} objecten, ${observation.visibleAgents.length} agents zichtbaar. Bereik: ${observation.perception?.range ?? 50} m / ${((observation.perception?.fieldOfView ?? Math.PI) * 180) / Math.PI}°. ${observation.visibleEntities.map((e: { id: string }) => e.id).join(", ") || "Geen objecten in beeld."}`;
     }),
 );
 let decisionLoading = false;
@@ -841,6 +858,7 @@ async function seekReplay() {
   if (!replayActive || generation !== replayRequest) return;
   scene?.load(data.definition);
   el("agents").replaceChildren();
+  if (pov) selectedAgent = pov;
   update(data.state);
   el("view-camera").textContent = pov
     ? `${pov.toUpperCase()} POV`

@@ -50,7 +50,7 @@ export const worldTools = [
   {
     name: "world_interact",
     description:
-      "Activate an artifact, a carried torch (35m sight), or a placed campfire (35m sight when within 10m).",
+      "Activate an artifact, a carried torch (70m sight), or a placed campfire (70m sight when within 10m).",
     schema: z.strictObject({
       entityId,
       interaction: z.literal("activate"),
@@ -106,7 +106,7 @@ export const worldTools = [
   {
     name: "world_look",
     description:
-      "Propose turning in radians: 0 faces +z, pi/2 faces +x. FOV is 120 degrees. New view arrives next turn.",
+      "Propose turning in radians: 0 faces +z, pi/2 faces +x. FOV is 180 degrees. New view arrives next turn.",
     schema: z.strictObject({
       orientation: z.number().min(-Math.PI).max(Math.PI),
       ...reason,

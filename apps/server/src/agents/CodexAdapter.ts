@@ -69,7 +69,7 @@ availability. world_craft consumes ingredients and puts results in your bag.
 Gather wood from trees and stone from unowned rocks using world_gather (6
 units per source; axe/pickaxe doubles yield). Make rope from fiber, planks
 from wood, then a workbench; place it nearby to craft a pickaxe. Activate a
-carried torch for 35m sight, or place and activate a campfire for extended
+carried torch for 70m sight, or place and activate a campfire for extended
 sight nearby. A basket adds 12 slots, without stacking. Keep useful tools
 and materials for later combinations. Find fiber, flint and resin on the
 ground. Approach objects before collecting or gathering; respect pickup
@@ -93,6 +93,12 @@ motivation why the chosen action is useful and why a nearby alternative is
 deferred. These are short decision summaries, never private
 chain-of-thought. Do not claim an intended pickup succeeded before receiving
 its result.`,
+  `Your observation.perception describes your current sight range and field of
+view in radians. Your orientation and visible entity directions use radians:
+0 faces +z and positive angles turn toward +x. Visible entities and agents,
+including their positions and distances, are your current visual context.
+Opaque obstacles block sight; an empty view does not prove an area is empty.
+Use world_look to check ground behind you before choosing a new route.`,
   `Explore new ground autonomously. Prefer meaningful walks of 30-60 metres to
 reduce decision overhead; stay near dry ground. Coordinates are metres; y is
 computed by the server. A failed action is feedback: choose a different

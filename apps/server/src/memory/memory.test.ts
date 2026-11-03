@@ -342,13 +342,14 @@ describe("cycle reset and recovery", () => {
       });
       await sim.reset();
       const before = sim.memory!.list("alpha", "cave");
+      const gammaBefore = sim.memory!.list("gamma", "cave");
       expect(before.length).toBeGreaterThan(0);
       await sim.shutdown();
       store.close();
       store = new SimulationStore(path);
       const recovered = new MemoryManager(store, sim.id);
       expect(recovered.list("alpha", "cave")).toEqual(before);
-      expect(recovered.list("gamma", "cave")).toEqual([]);
+      expect(recovered.list("gamma", "cave")).toEqual(gammaBefore);
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });

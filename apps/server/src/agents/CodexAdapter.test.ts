@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentObservation } from "../../../../packages/shared/src/index.js";
 import { CodexAdapter } from "./CodexAdapter.js";
 import type { RpcMessage, RpcTransport } from "./codex/AppServerRpc.js";
+import { WorldEngine } from "../world/WorldEngine.js";
 import { Simulation } from "../simulation/Simulation.js";
 import { SimulationStore } from "../storage/SimulationStore.js";
 import { flatWorld, entity } from "../world/testFixtures.js";
@@ -145,6 +146,28 @@ const setup = (timeout = 1000, minDecisionIntervalMs = 0) => {
   return { rpc, adapter };
 };
 describe("Codex decisions", () => {
+  it("supplies expanded sight and visible objects in the decision context", async () => {
+    const { rpc, adapter } = setup();
+    const engine = new WorldEngine(
+      flatWorld([entity("peripheral", "artifact", 40, 5)]),
+      [{ id: "alpha", name: "Alpha", position: { x: 0, y: 2, z: 0 } }],
+    );
+    try {
+      await adapter.decide(engine.observe("alpha")!);
+      const prompt = rpc.calls.find((call) => call.method === "turn/start")!
+        .params.input[0].text;
+      const context = JSON.parse(prompt.split("\n")[1]);
+      expect(context.perception).toMatchObject({
+        range: 50,
+        fieldOfView: Math.PI,
+      });
+      expect(context.visibleEntities).toMatchObject([
+        { id: "peripheral", position: { x: 40, z: 5 } },
+      ]);
+    } finally {
+      await adapter.close();
+    }
+  });
   it("spaces decision starts across agents in wall time and preserves pacing on reset", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(1000000);

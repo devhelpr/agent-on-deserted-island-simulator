@@ -1,8 +1,11 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import type {
-  WorldDefinition,
-  WorldStateDto,
+import {
+  terrainHeight,
+  visionRange,
+  VISION_FIELD_OF_VIEW,
+  type WorldDefinition,
+  type WorldStateDto,
 } from "../../../../packages/shared/src/index.js";
 
 export class IslandScene {
@@ -21,6 +24,10 @@ export class IslandScene {
     }
   >();
   private readonly entities = new Map<string, THREE.Group>();
+  private selectedAgent = "alpha";
+  private following = false;
+  private definition?: WorldDefinition;
+  private readonly sight = new THREE.Group();
   private readonly resizeObserver: ResizeObserver;
 
   constructor(private readonly host: HTMLElement) {
@@ -50,6 +57,7 @@ export class IslandScene {
     ocean.position.y = 0;
     this.scene.add(ocean);
     this.scene.add(this.world);
+    this.scene.add(this.sight);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.06;
@@ -66,6 +74,15 @@ export class IslandScene {
           agent.target,
           Math.min(1, (performance.now() - agent.receivedAt) / 100),
         );
+      if (this.following) {
+        const agent = this.agents.get(this.selectedAgent);
+        if (agent) {
+          this.camera.position.add(
+            agent.group.position.clone().sub(this.controls.target),
+          );
+          this.controls.target.copy(agent.group.position);
+        }
+      }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     });
@@ -78,15 +95,18 @@ export class IslandScene {
     this.renderer.setSize(width, height);
   }
   resetCamera() {
+    this.following = false;
     this.camera.position.set(310, 320, 350);
     this.controls.target.set(0, 5, 0);
     this.controls.update();
   }
   focusAgent(id = "alpha") {
+    this.selectedAgent = id;
+    this.following = true;
     const agent = this.agents.get(id);
     if (!agent) return;
     this.controls.target.copy(agent.target);
-    this.camera.position.copy(agent.target).add(new THREE.Vector3(45, 45, 50));
+    this.camera.position.copy(agent.target).add(new THREE.Vector3(18, 23, 25));
     this.controls.update();
   }
   private createAgent(id: string) {
@@ -124,6 +144,8 @@ export class IslandScene {
     return agent;
   }
   load(definition: WorldDefinition) {
+    this.definition = definition;
+    this.clearSight();
     this.disposeGroup(this.world);
     this.scene.remove(this.world);
     this.entities.clear();
@@ -257,11 +279,15 @@ export class IslandScene {
       this.entities.set(entity.id, group);
     }
   }
+  selectAgent(id: string) {
+    this.selectedAgent = id;
+  }
   update(state: WorldStateDto) {
     this.renderer.domElement.setAttribute(
       "aria-label",
       `3D eiland met ${state.agents.map((agent) => agent.name).join(", ")}`,
     );
+    this.updateSight(state);
     const presentAgents = new Set(state.agents.map((agent) => agent.id));
     for (const [id, agent] of this.agents) {
       if (!presentAgents.has(id)) {
@@ -326,9 +352,88 @@ export class IslandScene {
         });
     }
   }
+  private clearSight() {
+    this.disposeGroup(this.sight);
+    this.sight.clear();
+  }
+  private updateSight(state: WorldStateDto) {
+    this.clearSight();
+    const agent = state.agents.find((a) => a.id === this.selectedAgent);
+    if (!agent || !this.definition) return;
+    const range = visionRange(agent, state.entities);
+    const point = (radius: number, angle: number) => {
+      const x = agent.position.x + Math.sin(angle) * radius;
+      const z = agent.position.z + Math.cos(angle) * radius;
+      return new THREE.Vector3(
+        x,
+        terrainHeight(this.definition!.terrain, x, z) + 0.35,
+        z,
+      );
+    };
+    // Subdivide radially so the sector follows hills as well as its outer arc.
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    const segments = 48;
+    const rings = 12;
+    for (let r = 0; r <= rings; r++)
+      for (let i = 0; i <= segments; i++) {
+        const angle =
+          agent.orientation + (i / segments - 0.5) * VISION_FIELD_OF_VIEW;
+        vertices.push(...point((r / rings) * range, angle).toArray());
+        if (r < rings && i < segments) {
+          const a = r * (segments + 1) + i;
+          const b = a + segments + 1;
+          indices.push(a, b, a + 1, a + 1, b, b + 1);
+        }
+      }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(vertices, 3),
+    );
+    geometry.setIndex(indices);
+    const sector = new THREE.Mesh(
+      geometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xffd477,
+        transparent: true,
+        opacity: 0.18,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.sight.add(sector);
+    const outline = [point(0, 0)];
+    for (let i = 0; i <= segments; i++)
+      outline.push(
+        point(
+          range,
+          agent.orientation + (i / segments - 0.5) * VISION_FIELD_OF_VIEW,
+        ),
+      );
+    outline.push(point(0, 0));
+    for (const points of [
+      outline,
+      [
+        point(12, agent.orientation - 0.22),
+        point(17, agent.orientation),
+        point(12, agent.orientation + 0.22),
+      ],
+      Array.from({ length: rings + 1 }, (_, i) =>
+        point((i / rings) * range, agent.orientation),
+      ),
+    ]) {
+      this.sight.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color: 0xffdd88, depthTest: false }),
+        ),
+      );
+    }
+  }
   private disposeGroup(group: THREE.Object3D) {
     group.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
+      if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
         object.geometry.dispose();
         for (const material of Array.isArray(object.material)
           ? object.material

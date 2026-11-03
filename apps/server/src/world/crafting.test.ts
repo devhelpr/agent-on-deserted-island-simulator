@@ -142,7 +142,7 @@ describe("material bag and crafting", () => {
   it("activates crafted light and exhausts finite material sources", () => {
     const engine = setup(
       ["wood", "resin", "fiber"],
-      [entity("far", "artifact", 0, 30), entity("tree", "tree", 3, 0)],
+      [entity("far", "artifact", 0, 60), entity("tree", "tree", 3, 0)],
     );
     expect(
       engine.observe("alpha")!.visibleEntities.some((e) => e.id === "far"),

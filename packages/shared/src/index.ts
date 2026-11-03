@@ -3,6 +3,24 @@ export const TICK_MS = 50;
 export const CYCLE_TICKS = 72_000;
 export const AGENT_RADIUS = 1.1;
 export const INTERACTION_RANGE = 3;
+export const VISION_RANGE = 50;
+export const LIT_VISION_RANGE = 70;
+export const VISION_FIELD_OF_VIEW = Math.PI;
+export function visionRange(
+  agent: Pick<AgentState, "id" | "position">,
+  entities: EntityState[],
+): number {
+  return entities.some(
+    (e) =>
+      e.activated &&
+      ((e.itemKind === "torch" && e.ownerId === agent.id) ||
+        (e.itemKind === "campfire" &&
+          !e.ownerId &&
+          distance(agent.position, e.position) <= 10)),
+  )
+    ? LIT_VISION_RANGE
+    : VISION_RANGE;
+}
 export const vectorSchema = z.strictObject({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -30,7 +48,7 @@ export const ITEMS = {
   },
   torch: {
     label: "Fakkel",
-    description: "Activeren in de tas vergroot het zicht van 25 naar 35 meter.",
+    description: "Activeren in de tas vergroot het zicht van 50 naar 70 meter.",
   },
   basket: {
     label: "Draagmand",
@@ -44,7 +62,7 @@ export const ITEMS = {
   campfire: {
     label: "Kampvuur",
     description:
-      "Neerleggen en activeren voor 35 meter zicht binnen 10 meter van het vuur.",
+      "Neerleggen en activeren voor 70 meter zicht binnen 10 meter van het vuur.",
   },
 } as const;
 export type ItemKind = keyof typeof ITEMS;
@@ -211,6 +229,12 @@ export interface AgentObservation {
   orientation: number;
   inventory: string[];
   inventoryCapacity?: number;
+  /** Angles are radians; orientation 0 faces +z, positive turns toward +x. */
+  perception?: {
+    range: number;
+    fieldOfView: number;
+    occlusion: "opaque obstacles block sight";
+  };
   recipes?: readonly (CraftingRecipe & {
     craftable: boolean;
     missing: Partial<Record<ItemKind, number>>;

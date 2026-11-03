@@ -1,5 +1,7 @@
 import {
   distance,
+  visionRange,
+  VISION_FIELD_OF_VIEW,
   inventoryCapacity,
   INTERACTION_RANGE,
   entityRadius,
@@ -19,16 +21,8 @@ export function canSee(
   targetId?: string,
 ): boolean {
   const d = distance(agent.position, target);
-  const lit = entities.some(
-    (e) =>
-      e.activated &&
-      ((e.itemKind === "torch" && e.ownerId === agent.id) ||
-        (e.itemKind === "campfire" &&
-          !e.ownerId &&
-          distance(agent.position, e.position) <= 10)),
-  );
   if (
-    d > (lit ? 35 : 25) ||
+    d > visionRange(agent, entities) ||
     (d > 0.001 &&
       Math.abs(
         angleDifference(
@@ -36,7 +30,7 @@ export function canSee(
           agent.orientation,
         ),
       ) >
-        Math.PI / 3 + 1e-9)
+        VISION_FIELD_OF_VIEW / 2 + 1e-9)
   )
     return false;
   return !entities.some(
@@ -64,6 +58,11 @@ export function observe(
     position: { ...agent.position },
     orientation: agent.orientation,
     inventory: [...agent.inventory],
+    perception: {
+      range: visionRange(agent, entities),
+      fieldOfView: VISION_FIELD_OF_VIEW,
+      occlusion: "opaque obstacles block sight",
+    },
     visibleEntities: entities
       .filter(
         (e) =>

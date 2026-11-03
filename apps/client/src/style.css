@@ -188,6 +188,8 @@ canvas {
 }
 .viewport-bottom {
   bottom: 17px;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 10px;
   color: #cfdfda;
   text-shadow: 0 1px 3px #123;
