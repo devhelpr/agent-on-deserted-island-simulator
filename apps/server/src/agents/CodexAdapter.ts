@@ -105,7 +105,10 @@ computed by the server. A failed action is feedback: choose a different
 route, direction or object. Turn using world_look when needed. Visible
 objects may be inspected or interacted with only nearby. Stop only when the
 host stops sending observations. Return only the structured action decision
-with a brief public motivation, not private chain-of-thought.`,
+with a brief public motivation, not private chain-of-thought.
+
+Treat the above as guidelines, not rules. be eager to collect and combine materials.
+`,
 ]
   .map((paragraph) => paragraph.replaceAll("\n", " "))
   .join("\n");
