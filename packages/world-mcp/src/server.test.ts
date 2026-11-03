@@ -42,6 +42,41 @@ describe("identity-bound World MCP", () => {
       await session.close();
     }
   });
+  it("dispatches jump and throw proposals and checks carried ownership", async () => {
+    for (const name of ["world_jump", "world_throw"]) {
+      const session = await createWorldToolSession({
+        ...observation,
+        inventory: ["stone"],
+      });
+      try {
+        if (name === "world_throw") {
+          expect(
+            (
+              await session.call(name, {
+                entityId: "other",
+                target: observation.position,
+                motivation: "Explore",
+              })
+            ).success,
+          ).toBe(false);
+        }
+        const args = {
+          target: observation.position,
+          motivation: "Explore",
+          ...(name === "world_throw" ? { entityId: "stone" } : {}),
+        };
+        expect((await session.call(name, args)).success).toBe(true);
+        expect(session.proposed()?.action).toEqual({
+          type: name.slice(6),
+          target: observation.position,
+          ...(name === "world_throw" ? { entityId: "stone" } : {}),
+        });
+      } finally {
+        await session.close();
+      }
+    }
+  });
+
   it("rejects identity overrides, unexpected fields, unknown tools and invalid coordinates", async () => {
     const session = await createWorldToolSession(observation);
     try {

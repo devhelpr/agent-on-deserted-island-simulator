@@ -5,6 +5,8 @@ import {
   inventoryCapacity,
   INTERACTION_RANGE,
   entityRadius,
+  entityHeight,
+  interactionDistance,
   type AgentObservation,
   type AgentState,
   type EntityState,
@@ -33,15 +35,34 @@ export function canSee(
         VISION_FIELD_OF_VIEW / 2 + 1e-9)
   )
     return false;
-  return !entities.some(
-    (e) =>
-      e.id !== targetId &&
-      !e.ownerId &&
-      e.type !== "artifact" &&
-      e.type !== "item" &&
+  return !entities.some((e) => {
+    if (
+      e.id === targetId ||
+      e.ownerId ||
+      e.type === "artifact" ||
+      e.type === "item"
+    )
+      return false;
+    const dx = target.x - agent.position.x;
+    const dz = target.z - agent.position.z;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((e.position.x - agent.position.x) * dx +
+          (e.position.z - agent.position.z) * dz) /
+          (d * d || 1),
+      ),
+    );
+    const rayHeight =
+      agent.position.y + 3.8 + (target.y + 1 - agent.position.y - 3.8) * t;
+    return (
       distance(e.position, agent.position) < d &&
-      segmentDistance(e.position, agent.position, target) < entityRadius(e),
-  );
+      segmentDistance(e.position, agent.position, target) < entityRadius(e) &&
+      rayHeight < e.position.y + entityHeight(e) &&
+      rayHeight > e.position.y
+    );
+  });
 }
 export function observe(
   agent: AgentState,
@@ -92,7 +113,7 @@ export function observe(
             e.properties.movable &&
             !e.ownerId &&
             agent.inventory.length < inventoryCapacity([...held, e]) &&
-            distance(agent.position, e.position) <=
+            interactionDistance(agent.position, e) <=
               INTERACTION_RANGE + entityRadius(e),
           blocker: !e.properties.movable
             ? "NOT_MOVABLE"
@@ -103,7 +124,7 @@ export function observe(
                     ? inventoryCapacity([...held, e])
                     : capacity)
                 ? "INVENTORY_FULL"
-                : distance(agent.position, e.position) >
+                : interactionDistance(agent.position, e) >
                     INTERACTION_RANGE + entityRadius(e)
                   ? "OUT_OF_RANGE"
                   : null,

@@ -19,6 +19,10 @@ const outcomes: Record<string, string> = {
     "De route bleef te lang geblokkeerd, bijvoorbeeld door een andere agent.",
   DROP_BLOCKED:
     "Op de gekozen neerlegplek staat een object of agent, of het terrein is ongeschikt.",
+  JUMP_UNREACHABLE: "De sprong is te ver, te hoog of geblokkeerd.",
+  THROW_UNREACHABLE: "De worp is te ver, te hoog of geblokkeerd.",
+  FLIGHT_BLOCKED: "De vlucht werd geblokkeerd.",
+  NOT_GROUNDED: "De agent staat nog niet op een oppervlak.",
   NOT_OWNER: "De agent draagt dit object niet.",
 };
 export const outcomeReason = (error?: string) => {
@@ -41,6 +45,10 @@ export function actionTitle(action: WorldActionInput) {
       return `Activeren · ${action.entityId}`;
     case "drop":
       return `Neerleggen · ${action.entityId}`;
+    case "throw":
+      return `Gooien · ${action.entityId}`;
+    case "jump":
+      return `Springen naar (${action.target.x.toFixed(1)}, ${action.target.z.toFixed(1)})`;
     case "move":
       return `Lopen naar (${action.target.x.toFixed(1)}, ${action.target.z.toFixed(1)})`;
     case "look":

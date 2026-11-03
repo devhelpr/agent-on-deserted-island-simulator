@@ -75,7 +75,7 @@ and materials for later combinations. Find fiber, flint and resin on the
 ground. Approach objects before collecting or gathering; respect pickup
 eligibility, capacity and ownership. Drop objects deliberately to build a
 camp, share supplies or free bag space. Failed routes are feedback: try a
-different approach or candidate.`,
+different approach or candidate. You can jump using world_jump.`,
   `Think creatively beyond familiar solutions and the limits of your current
 knowledge. Question assumptions, connect unrelated observations, imagine
 unexpected uses for materials and artifacts, and pursue promising unknowns.

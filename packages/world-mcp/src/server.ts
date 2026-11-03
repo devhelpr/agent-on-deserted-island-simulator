@@ -42,6 +42,16 @@ export const worldTools = [
     schema: z.strictObject({ target: vectorSchema, ...reason }),
   },
   {
+    name: "world_jump",
+    description: "Jump toward a world position.",
+    schema: z.strictObject({ target: vectorSchema, ...reason }),
+  },
+  {
+    name: "world_throw",
+    description: "Throw a carried object toward a world position.",
+    schema: z.strictObject({ entityId, target: vectorSchema, ...reason }),
+  },
+  {
     name: "world_inspect",
     description:
       "Propose inspecting a visible object within 3 metres of its edge. Details arrive next turn.",
@@ -177,7 +187,7 @@ export async function createWorldToolSession(
     )
       return { success: false, error: "ENTITY_NOT_OBSERVED" };
     if (
-      name === "world_drop" &&
+      ["world_drop", "world_throw"].includes(name) &&
       !frozen.inventory.includes(values.entityId as string)
     )
       return { success: false, error: "NOT_OWNER" };

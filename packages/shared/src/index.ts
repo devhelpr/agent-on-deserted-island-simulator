@@ -140,6 +140,8 @@ export interface AgentState {
 const entityId = z.string().min(1).max(80);
 export const actionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("move"), target: vectorSchema }),
+  z.strictObject({ type: z.literal("jump"), target: vectorSchema }),
+  z.strictObject({ type: z.literal("throw"), entityId, target: vectorSchema }),
   z.strictObject({
     type: z.literal("look"),
     orientation: z.number().finite().min(-Math.PI).max(Math.PI),
@@ -477,4 +479,35 @@ export function terrainHeight(terrain: Terrain, x: number, z: number): number {
     heights[(z0 + 1) * n + x0]! * (1 - tx) +
     heights[(z0 + 1) * n + x0 + 1]! * tx;
   return a * (1 - tz) + b * tz;
+}
+
+/** Height above the entity origin, matching the scene's solid silhouettes. */
+export function entityHeight(entity: WorldEntity): number {
+  return (
+    (entity.type === "tree"
+      ? 13.5
+      : entity.type === "rock"
+        ? 2.84
+        : entity.type === "cave"
+          ? 9.4
+          : entity.type === "item"
+            ? 0.8
+            : entity.kind === "shell"
+              ? 3.9
+              : entity.kind === "relic"
+                ? 4.35
+                : 5.7) * entity.scale
+  );
+}
+/** Distance to an object's vertical extent; horizontal radii remain separate. */
+export function interactionDistance(
+  position: Vector3,
+  entity: WorldEntity,
+): number {
+  const vertical = Math.max(
+    entity.position.y - position.y,
+    position.y - entity.position.y - entityHeight(entity),
+    0,
+  );
+  return Math.hypot(distance(position, entity.position), vertical);
 }

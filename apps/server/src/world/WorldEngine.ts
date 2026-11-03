@@ -8,6 +8,8 @@ import {
   AGENT_RADIUS,
   distance,
   entityRadius,
+  entityHeight,
+  interactionDistance,
   INTERACTION_RANGE,
   TICK_MS,
   type ActionRecord,
@@ -21,6 +23,16 @@ import {
 } from "../../../../packages/shared/src/index.js";
 import { NavigationSystem, segmentDistance } from "./NavigationSystem.js";
 import { canSee, observe } from "./PerceptionSystem.js";
+import {
+  SpatialPhysics,
+  flightPoint,
+  GRAVITY,
+  JUMP_HEIGHT,
+  JUMP_RANGE,
+  THROW_RANGE,
+  AGENT_HEIGHT,
+  type Flight,
+} from "./SpatialPhysics.js";
 export { TICK_MS };
 interface ActiveMotion {
   path: Vector3[];
@@ -57,6 +69,8 @@ export class WorldEngine {
   private mutating = false;
   private accepting = true;
   readonly navigation: NavigationSystem;
+  private readonly physics: SpatialPhysics;
+  private readonly flights = new Map<string, Flight>();
   setCommit(commit: () => void) {
     this.commit = commit;
   }
@@ -75,6 +89,7 @@ export class WorldEngine {
       actions: [...this.actions],
       motions: [...this.motions],
       waits: [...this.waits],
+      flights: [...this.flights],
       events: this.events,
       lastActions: [...this.lastActions],
       messages: [...this.messages],
@@ -98,11 +113,12 @@ export class WorldEngine {
     restoreMap(this.actions, c.actions);
     restoreMap(this.motions, c.motions);
     restoreMap(this.waits, c.waits);
+    restoreMap(this.flights, c.flights ?? []);
     restoreMap(this.lastActions, c.lastActions);
     restoreMap(this.messages, c.messages);
     restoreMap(this.observedEvents, c.observedEvents);
     this.events.splice(0, this.events.length, ...c.events);
-    this.navigation.updateObstacles(this.entityList());
+    this.navigation.updateObstacles(this.solids());
   }
   private mutate<T>(operation: () => T): T {
     const before = this.checkpoint();
@@ -120,6 +136,7 @@ export class WorldEngine {
   }
   constructor(definition: WorldDefinition, spawns?: AgentSpawn[]) {
     this.definition = structuredClone(definition);
+    this.physics = new SpatialPhysics(this.definition.terrain);
     for (const e of definition.entities)
       this.entities.set(e.id, {
         ...structuredClone(e),
@@ -186,7 +203,13 @@ export class WorldEngine {
   }
   getIdleAgents(): AgentState[] {
     return structuredClone(
-      this.orderedAgents().filter((a) => a.status === "idle"),
+      this.orderedAgents().filter(
+        (a) =>
+          a.status === "idle" &&
+          ![...this.flights.values()].some(
+            (f) => !f.entityId && f.agentId === a.id,
+          ),
+      ),
     );
   }
   getAction(id: string): ActionRecord | undefined {
@@ -208,7 +231,13 @@ export class WorldEngine {
     if (!parsed.success) return { accepted: false, error: "INVALID_ACTION" };
     const agent = this.agents.get(agentId);
     if (!agent) return { accepted: false, error: "AGENT_NOT_FOUND" };
-    if (agent.activeActionId) return { accepted: false, error: "AGENT_BUSY" };
+    if (
+      agent.activeActionId ||
+      [...this.flights.values()].some(
+        (f) => !f.entityId && f.agentId === agentId,
+      )
+    )
+      return { accepted: false, error: "AGENT_BUSY" };
     const action: ActionRecord = {
       id: `act-${this.nextAction++}`,
       agentId,
@@ -247,7 +276,11 @@ export class WorldEngine {
   private trimActions() {
     if (this.actions.size <= 512) return;
     for (const [id, a] of this.actions) {
-      if (a.status !== "running" && a.status !== "queued")
+      if (
+        a.status !== "running" &&
+        a.status !== "queued" &&
+        !this.flights.has(id)
+      )
         this.actions.delete(id);
       if (this.actions.size <= 512) break;
     }
@@ -370,7 +403,7 @@ export class WorldEngine {
       (e) =>
         e.itemKind === kind &&
         !e.ownerId &&
-        distance(agent.position, e.position) <=
+        interactionDistance(agent.position, e) <=
           INTERACTION_RANGE + entityRadius(e) &&
         canSee(agent, e.position, this.entityList(), e.id),
     );
@@ -427,8 +460,20 @@ export class WorldEngine {
     action.startedAtTick = this.tick;
     const agent = this.agents.get(action.agentId)!;
     const input = action.input;
+    if (input.type === "jump") {
+      if (!this.grounded(agent.position))
+        return this.fail(action, "NOT_GROUNDED");
+      return this.launch(action, agent);
+    }
     if (input.type === "move") {
-      const path = this.navigation.findPath(agent.position, input.target);
+      if (!this.grounded(agent.position))
+        return this.fail(action, "NOT_GROUNDED");
+      const elevated =
+        agent.position.y >
+        this.navigation.point(agent.position.x, agent.position.z).y + 0.1;
+      const path = elevated
+        ? this.surfacePath(agent.position, input.target)
+        : this.navigation.findPath(agent.position, input.target);
       if (!path) return this.fail(action, "UNREACHABLE");
       this.motions.set(action.id, { path, blockedTicks: 0 });
       agent.status = "moving";
@@ -483,12 +528,13 @@ export class WorldEngine {
     }
     const entity = this.entities.get(input.entityId);
     if (!entity) return this.fail(action, "ENTITY_NOT_FOUND");
-    if (input.type === "drop") {
+    if (input.type === "drop" || input.type === "throw") {
       if (entity.ownerId !== agent.id || !agent.inventory.includes(entity.id))
         return this.fail(action, "NOT_OWNER");
       const remaining = this.held(agent).filter((e) => e.id !== entity.id);
       if (remaining.length > inventoryCapacity(remaining))
         return this.fail(action, "INVENTORY_FULL");
+      if (input.type === "throw") return this.launch(action, agent, entity);
       const target = this.navigation.point(input.target.x, input.target.z);
       if (
         distance(agent.position, target) >
@@ -506,14 +552,16 @@ export class WorldEngine {
       entity.ownerId = null;
       entity.position = target;
       agent.inventory = agent.inventory.filter((id) => id !== entity.id);
-      this.navigation.updateObstacles(this.entityList());
+      this.navigation.updateObstacles(this.solids());
       this.finish(action, "succeeded");
       return;
     }
+    if ([...this.flights.values()].some((f) => f.entityId === entity.id))
+      return this.fail(action, "OBJECT_UNAVAILABLE");
     if (entity.ownerId && entity.ownerId !== agent.id)
       return this.fail(action, "OBJECT_UNAVAILABLE");
     if (
-      distance(agent.position, entity.position) >
+      interactionDistance(agent.position, entity) >
       INTERACTION_RANGE + entityRadius(entity)
     )
       return this.fail(action, "OUT_OF_RANGE");
@@ -590,7 +638,7 @@ export class WorldEngine {
     entity.ownerId = agent.id;
     entity.position = { ...agent.position };
     agent.inventory.push(entity.id);
-    this.navigation.updateObstacles(this.entityList());
+    this.navigation.updateObstacles(this.solids());
     this.finish(action, "succeeded");
   }
   step(): void {
@@ -605,6 +653,11 @@ export class WorldEngine {
           : a.agentId > b.agentId
             ? 1
             : a.id.localeCompare(b.id),
+      );
+    const needsSettling =
+      this.flights.size > 0 ||
+      queued.some((a) =>
+        ["jump", "throw", "pickup", "drop", "craft"].includes(a.input.type),
       );
     for (const action of queued) this.start(action);
     for (const agent of this.orderedAgents()) {
@@ -628,12 +681,22 @@ export class WorldEngine {
           motion.path.shift();
           continue;
         }
-        const next = this.navigation.point(
-          agent.position.x + ((target.x - agent.position.x) * step) / d,
-          agent.position.z + ((target.z - agent.position.z) * step) / d,
+        const next = this.physics.surface(
+          this.navigation.point(
+            agent.position.x + ((target.x - agent.position.x) * step) / d,
+            agent.position.z + ((target.z - agent.position.z) * step) / d,
+          ),
+          this.solids(),
+          agent.position.y + 0.4,
         );
         if (
-          !this.navigation.canTraverse(agent.position, next) ||
+          !this.physics.clear(
+            next,
+            AGENT_RADIUS,
+            AGENT_HEIGHT,
+            this.solids(),
+          ) ||
+          Math.abs(next.y - agent.position.y) > 0.4 ||
           this.orderedAgents().some(
             (a) =>
               a.id !== agent.id &&
@@ -658,7 +721,212 @@ export class WorldEngine {
       if (!motion.path.length) this.finish(action, "succeeded");
       else if (motion.blockedTicks >= 100) this.fail(action, "PATH_BLOCKED");
     }
+    this.advanceFlights();
+    if (needsSettling) this.settle();
     this.greetEncounters();
+  }
+  private solids(excludeId?: string) {
+    const flying = new Set([...this.flights.values()].map((f) => f.entityId));
+    return this.entityList().filter(
+      (e) => e.id !== excludeId && !flying.has(e.id),
+    );
+  }
+  private grounded(position: Vector3) {
+    return (
+      Math.abs(
+        position.y -
+          this.physics.surface(position, this.solids(), position.y).y,
+      ) < 1e-6
+    );
+  }
+  private surfacePath(from: Vector3, target: Vector3): Vector3[] | null {
+    const path: Vector3[] = [];
+    const samples = Math.max(1, Math.ceil(distance(from, target) / 0.15));
+    if (!this.physics.inBounds(target, AGENT_RADIUS)) return null;
+    let previous = from;
+    for (let i = 1; i <= samples; i++) {
+      const next = this.physics.surface(
+        {
+          x: from.x + ((target.x - from.x) * i) / samples,
+          y: 0,
+          z: from.z + ((target.z - from.z) * i) / samples,
+        },
+        this.solids(),
+        previous.y + 0.4,
+      );
+      if (
+        Math.abs(next.y - previous.y) > 0.4 ||
+        !this.physics.clear(next, AGENT_RADIUS, AGENT_HEIGHT, this.solids())
+      )
+        return null;
+      path.push(next);
+      previous = next;
+    }
+    return path;
+  }
+  private agentCollision(
+    p: Vector3,
+    radius: number,
+    height: number,
+    ignoreId?: string,
+  ) {
+    return this.orderedAgents().some(
+      (a) =>
+        a.id !== ignoreId &&
+        distance(a.position, p) < AGENT_RADIUS + radius - 1e-7 &&
+        p.y < a.position.y + AGENT_HEIGHT - 1e-7 &&
+        p.y + height > a.position.y + 1e-7,
+    );
+  }
+  private launch(
+    action: ActionRecord,
+    agent: AgentState,
+    entity?: EntityState,
+  ) {
+    const input = action.input;
+    if (input.type !== "jump" && input.type !== "throw") return;
+    const solids = this.solids(entity?.id);
+    const from = { ...agent.position, y: agent.position.y + (entity ? 2 : 0) };
+    const to = this.physics.surface(input.target, solids);
+    const radius = entity ? entityRadius(entity) : AGENT_RADIUS;
+    const height = entity ? entityHeight(entity) : AGENT_HEIGHT;
+    const rise = entity ? 6 : JUMP_HEIGHT;
+    const velocity = Math.sqrt(2 * GRAVITY * rise);
+    const discriminant = velocity ** 2 - 2 * GRAVITY * (to.y - from.y);
+    const fail = () =>
+      this.fail(action, entity ? "THROW_UNREACHABLE" : "JUMP_UNREACHABLE");
+    if (
+      distance(from, to) > (entity ? THROW_RANGE : JUMP_RANGE) ||
+      discriminant < 0 ||
+      !this.physics.inBounds(to, radius)
+    )
+      return fail();
+    const duration = (velocity + Math.sqrt(discriminant)) / GRAVITY;
+    const flight: Flight = {
+      agentId: agent.id,
+      entityId: entity?.id,
+      from,
+      to,
+      velocity,
+      duration,
+      elapsed: 0,
+    };
+    if (this.agentCollision(to, radius, height, entity ? undefined : agent.id))
+      return fail();
+    const samples = Math.ceil(duration / 0.025);
+    for (let i = 0; i <= samples; i++) {
+      const p = flightPoint(flight, (duration * i) / samples);
+      if (
+        !this.physics.clear(p, radius, height, solids) ||
+        this.agentCollision(p, radius, height, agent.id)
+      )
+        return fail();
+    }
+    if (entity) {
+      entity.ownerId = null;
+      entity.position = from;
+      agent.inventory = agent.inventory.filter((id) => id !== entity.id);
+    }
+    if (distance(from, to) > 0.001)
+      agent.orientation = Math.atan2(to.x - from.x, to.z - from.z);
+    agent.status = "moving";
+    this.flights.set(action.id, flight);
+    if (entity) this.navigation.updateObstacles(this.solids());
+  }
+  private advanceFlights() {
+    for (const [id, flight] of this.flights) {
+      const agent = this.agents.get(flight.agentId)!;
+      const entity = flight.entityId
+        ? this.entities.get(flight.entityId)!
+        : undefined;
+      const radius = entity ? entityRadius(entity) : AGENT_RADIUS;
+      const height = entity ? entityHeight(entity) : AGENT_HEIGHT;
+      const action = this.actions.get(id)!;
+      const elapsed = Math.min(
+        flight.duration,
+        flight.elapsed + TICK_MS / 1000,
+      );
+      // Substeps prevent tunnelling through thin objects between simulation ticks.
+      const samples = Math.ceil((elapsed - flight.elapsed) / 0.01);
+      let blocked = false;
+      for (let i = 1; i <= samples; i++) {
+        const p = flightPoint(
+          flight,
+          flight.elapsed + ((elapsed - flight.elapsed) * i) / samples,
+        );
+        if (
+          !this.physics.clear(p, radius, height, this.solids(entity?.id)) ||
+          this.agentCollision(
+            p,
+            radius,
+            height,
+            entity && elapsed >= flight.duration ? undefined : flight.agentId,
+          )
+        ) {
+          blocked = true;
+          break;
+        }
+        if (entity) entity.position = p;
+        else agent.position = p;
+      }
+      flight.elapsed = elapsed;
+      if (blocked || elapsed >= flight.duration) {
+        this.flights.delete(id);
+        if (!blocked) {
+          if (entity) entity.position = { ...flight.to };
+          else agent.position = { ...flight.to };
+        }
+        this.navigation.updateObstacles(this.solids());
+        if (action.status === "running")
+          this.finish(
+            action,
+            blocked ? "failed" : "succeeded",
+            blocked ? "FLIGHT_BLOCKED" : undefined,
+            { position: { ...(entity?.position ?? agent.position) } },
+          );
+      }
+      for (const itemId of agent.inventory)
+        this.entities.get(itemId)!.position = { ...agent.position };
+    }
+  }
+  private settle() {
+    // Removing a supporting object also lowers everything resting on it.
+    let changed = false;
+    for (const entity of this.solids()
+      .filter((e) => !e.ownerId)
+      .sort((a, b) => a.position.y - b.position.y)) {
+      if (
+        entity.position.y <=
+        this.navigation.point(entity.position.x, entity.position.z).y + 1e-7
+      )
+        continue;
+      const y = this.physics.surface(
+        entity.position,
+        this.solids(entity.id),
+        entity.position.y,
+      ).y;
+      if (y < entity.position.y - 1e-7) {
+        entity.position.y = y;
+        changed = true;
+      }
+    }
+    if (changed) this.navigation.updateObstacles(this.solids());
+    for (const agent of this.agents.values()) {
+      if (
+        [...this.flights.values()].some(
+          (f) => !f.entityId && f.agentId === agent.id,
+        )
+      )
+        continue;
+      const surface = this.physics.surface(
+        agent.position,
+        this.solids(),
+        agent.position.y,
+      );
+      if (surface.y < agent.position.y) agent.position.y = surface.y;
+      for (const id of agent.inventory)
+        this.entities.get(id)!.position = { ...agent.position };
+    }
   }
   private greetEncounters() {
     for (const agent of this.orderedAgents()) {
