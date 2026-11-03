@@ -124,6 +124,22 @@ const sessionSettings = (cwd: string) => ({
   runtimeWorkspaceRoots: [],
   baseInstructions: INSTRUCTIONS,
 });
+function log(
+  level: "info" | "warn" | "error",
+  event: string,
+  details: Record<string, unknown> = {},
+) {
+  const line = `[CodexAdapter] ${JSON.stringify({
+    time: new Date().toISOString(),
+    event,
+    ...details,
+  })}`;
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+const errorMessage = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).slice(0, 500);
 /**
  * Adapter for Codex CLI 0.161 app-server v2 structured decisions.
  */
@@ -160,11 +176,43 @@ export class CodexAdapter {
   statuses(): AgentSessionStatus[] {
     return structuredClone([...this.sessions.values()]);
   }
+  private async request<T = any>(
+    rpc: RpcTransport,
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+    agentId?: string,
+  ): Promise<T> {
+    const started = performance.now();
+    const details = {
+      agentId,
+      method,
+      threadId: params.threadId,
+      turnId: params.turnId,
+    };
+    log("info", "rpc.started", details);
+    try {
+      const result = await rpc.request<T>(method, params, signal);
+      log("info", "rpc.completed", {
+        ...details,
+        durationMs: Math.round(performance.now() - started),
+      });
+      return result;
+    } catch (error) {
+      log(signal?.aborted ? "warn" : "error", "rpc.failed", {
+        ...details,
+        durationMs: Math.round(performance.now() - started),
+        error: errorMessage(error),
+      });
+      throw error;
+    }
+  }
   private async connect() {
     if (this.disposed) throw new Error("CODEX_CLOSED");
     if (this.connecting) return this.connecting;
     if (this.rpc?.isAlive()) return;
     this.connecting = (async () => {
+      log("info", "runtime.connecting", { restarting: !!this.runtime });
       this.unsubscribe();
       if (this.runtime?.restart) await this.runtime.restart();
       else {
@@ -178,13 +226,14 @@ export class CodexAdapter {
       }
       const rpc = this.runtime.rpc;
       this.rpc = rpc;
-      rpc.onRequest(async () => {
+      rpc.onRequest(async (message) => {
+        log("error", "rpc.request_rejected", { method: message.method });
         throw new Error("REQUEST_NOT_ALLOWED");
       });
       this.unsubscribe = rpc.onNotification((message) =>
         this.notification(message),
       );
-      await rpc.request("initialize", {
+      await this.request(rpc, "initialize", {
         clientInfo: {
           name: "agent_island",
           title: "Agent Island",
@@ -193,10 +242,12 @@ export class CodexAdapter {
         capabilities: { experimentalApi: true },
       });
       rpc.notify("initialized");
+      log("info", "runtime.ready");
     })();
     try {
       await this.connecting;
     } catch (error) {
+      log("error", "runtime.connection_failed", { error: errorMessage(error) });
       await this.rpc?.close();
       throw error;
     } finally {
@@ -205,6 +256,9 @@ export class CodexAdapter {
   }
   private notification(message: RpcMessage) {
     if (message.method === "transport/closed") {
+      log(this.disposed ? "info" : "warn", "runtime.disconnected", {
+        activeTurns: this.active.size,
+      });
       for (const context of this.active.values())
         context.reject(new Error("CODEX_DISCONNECTED"));
       return;
@@ -218,6 +272,11 @@ export class CodexAdapter {
     if (message.method === "turn/started") {
       context.turnId = params.turn?.id ?? context.turnId;
       context.record.turnId = context.turnId ?? undefined;
+      log("info", "turn.started", {
+        agentId: context.agentId,
+        threadId: context.threadId,
+        turnId: context.turnId,
+      });
     }
     if (
       message.method === "item/started" &&
@@ -232,6 +291,12 @@ export class CodexAdapter {
         "subAgentActivity",
       ].includes(params.item?.type)
     ) {
+      log("error", "turn.tool_rejected", {
+        agentId: context.agentId,
+        threadId: context.threadId,
+        turnId: context.turnId,
+        toolType: params.item?.type,
+      });
       context.reject(new Error("FORBIDDEN_TOOL_ATTEMPT"));
       void this.runtime?.rpc.close();
       return;
@@ -247,6 +312,12 @@ export class CodexAdapter {
     if (message.method === "turn/completed") {
       context.finished = true;
       const turn = params.turn;
+      log(turn?.status === "completed" ? "info" : "warn", "turn.completed", {
+        agentId: context.agentId,
+        threadId: context.threadId,
+        turnId: turn?.id ?? context.turnId,
+        status: turn?.status,
+      });
       context.turnId = turn?.id ?? context.turnId;
       context.record.turnId = context.turnId ?? undefined;
       if (turn?.status !== "completed") {
@@ -270,10 +341,24 @@ export class CodexAdapter {
         const parsed = codexDecisionSchema.safeParse(output);
         if (!parsed.success) throw new Error("INVALID_STRUCTURED_DECISION");
         const { type, ...input } = parsed.data.action;
+        log("info", "world.call", {
+          agentId: context.agentId,
+          threadId: context.threadId,
+          turnId: context.turnId,
+          method: `world_${type}`,
+          action: parsed.data.action,
+          motivation: parsed.data.motivation,
+        });
         const result = await context.tools.call(`world_${type}`, {
           ...input,
           motivation: parsed.data.motivation,
           artifactConsiderations: parsed.data.artifactConsiderations,
+        });
+        log(result.success ? "info" : "error", "world.result", {
+          agentId: context.agentId,
+          turnId: context.turnId,
+          method: `world_${type}`,
+          success: result.success,
         });
         if (!result.success) throw new Error("WORLD_TOOL_REJECTED");
         const proposal = context.tools.proposed();
@@ -302,11 +387,19 @@ export class CodexAdapter {
       record.error = "AGENT_TURN_ALREADY_ACTIVE";
       record.durationMs = performance.now() - started;
       this.journal.changed(record);
+      log("warn", "decision.rejected", { agentId: id, error: record.error });
       throw new Error(record.error);
     }
     // Reserve the shared slot before the first await so agents cannot burst.
     this.nextDecisionAt = Date.now() + this.minDecisionIntervalMs;
     this.busy.add(id);
+    log("info", "decision.started", {
+      agentId: id,
+      tick: observation.tick,
+      visibleEntities: observation.visibleEntities.length,
+      visibleAgents: observation.visibleAgents.length,
+      lastAction: observation.lastAction,
+    });
     const session: AgentSessionStatus = this.sessions.get(id) ?? {
       agentId: id,
       controller: "codex" as const,
@@ -337,10 +430,12 @@ export class CodexAdapter {
       const settings = sessionSettings(this.runtime!.cwd);
       if (session.threadId) {
         try {
-          const resumed = await rpc.request(
+          const resumed = await this.request(
+            rpc,
             "thread/resume",
             { threadId: session.threadId, ...settings, excludeTurns: true },
             controller.signal,
+            id,
           );
           if (
             resumed.activePermissionProfile?.id !== "island" ||
@@ -349,14 +444,21 @@ export class CodexAdapter {
             throw new Error("UNSAFE_THREAD_CONFIGURATION");
         } catch (error) {
           if (controller.signal.aborted || !rpc.isAlive()) throw error;
+          log("warn", "thread.resume_failed", {
+            agentId: id,
+            threadId: session.threadId,
+            error: errorMessage(error),
+          });
           session.threadId = null;
         }
       }
       if (!session.threadId) {
-        const result = await rpc.request(
+        const result = await this.request(
+          rpc,
           "thread/start",
           { ...settings, dynamicTools: [] },
           controller.signal,
+          id,
         );
         if (
           !result?.thread?.id ||
@@ -367,6 +469,7 @@ export class CodexAdapter {
         session.threadId = result.thread.id;
       }
       record.threadId = session.threadId!;
+      log("info", "thread.ready", { agentId: id, threadId: session.threadId });
       tools = await createWorldToolSession(observation, (entry) => {
         record.tools.push(entry);
         this.journal.changed(record);
@@ -397,7 +500,8 @@ export class CodexAdapter {
       controller.signal.addEventListener("abort", onAbort, { once: true });
       let started: Promise<any> | undefined;
       try {
-        started = rpc.request(
+        started = this.request(
+          rpc,
           "turn/start",
           {
             threadId: session.threadId,
@@ -416,6 +520,7 @@ export class CodexAdapter {
             outputSchema: z.toJSONSchema(codexDecisionSchema),
           },
           controller.signal,
+          id,
         );
         // Both promises are handled immediately, including completion before
         // the start response.
@@ -463,6 +568,12 @@ export class CodexAdapter {
           );
           this.rateLimitedUntil = now + delay;
         }
+        log("warn", "runtime.rate_limited", {
+          agentId: id,
+          retryAt: new Date(this.rateLimitedUntil).toISOString(),
+          retryInMs: Math.max(0, Math.ceil(this.rateLimitedUntil - now)),
+          failures: this.rateLimitFailures,
+        });
         code = `CODEX_RATE_LIMITED:${code}`;
       }
       record.error = code.slice(0, 500);
@@ -472,15 +583,22 @@ export class CodexAdapter {
           : "failed";
       session.status = record.status === "cancelled" ? "idle" : "failed";
       session.lastError = record.error;
+      log(record.status === "cancelled" ? "warn" : "error", "decision.failed", {
+        agentId: id,
+        threadId: session.threadId,
+        turnId: context?.turnId,
+        status: record.status,
+        error: record.error,
+      });
       const turnId = context?.turnId;
       if (!context?.finished && turnId && this.rpc?.isAlive())
-        await this.rpc
-          .request(
-            "turn/interrupt",
-            { threadId: session.threadId, turnId },
-            AbortSignal.timeout(2000),
-          )
-          .catch(() => this.runtime?.rpc.close());
+        await this.request(
+          this.rpc,
+          "turn/interrupt",
+          { threadId: session.threadId, turnId },
+          AbortSignal.timeout(2000),
+          id,
+        ).catch(() => this.runtime?.rpc.close());
       else if (context && !context.finished && this.runtime)
         await this.runtime.rpc.close();
       throw new Error(record.error);
@@ -493,9 +611,18 @@ export class CodexAdapter {
       this.busy.delete(id);
       record.durationMs = performance.now() - started;
       this.journal.changed(record);
+      log("info", "decision.finished", {
+        agentId: id,
+        threadId: record.threadId,
+        turnId: record.turnId,
+        status: record.status,
+        action: record.action?.type,
+        durationMs: Math.round(record.durationMs),
+      });
     }
   }
   async resetCycle() {
+    log("info", "cycle.reset", { activeTurns: this.active.size });
     for (const context of this.active.values())
       context.reject(new Error("DECISION_CANCELLED"));
     while (this.busy.size)
@@ -506,6 +633,7 @@ export class CodexAdapter {
   async close() {
     if (this.disposed) return;
     this.disposed = true;
+    log("info", "runtime.closing", { activeTurns: this.active.size });
     for (const context of this.active.values())
       context.reject(new Error("DECISION_CANCELLED"));
     this.unsubscribe();
