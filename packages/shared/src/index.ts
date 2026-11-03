@@ -9,7 +9,76 @@ export const vectorSchema = z.strictObject({
   z: z.number().finite(),
 });
 export type Vector3 = z.infer<typeof vectorSchema>;
-export type EntityType = "tree" | "rock" | "artifact" | "cave";
+export const ITEMS = {
+  wood: { label: "Hout", description: "Voor planken, gereedschap en vuur." },
+  stone: { label: "Steen", description: "Voor gereedschap en een kampvuur." },
+  fiber: {
+    label: "Plantenvezels",
+    description: "Te vlechten tot touw en een mand.",
+  },
+  flint: { label: "Vuursteen", description: "Om een kampvuur aan te steken." },
+  resin: { label: "Hars", description: "Brandstof voor een fakkel." },
+  plank: { label: "Plank", description: "Bouwmateriaal voor een werkbank." },
+  rope: { label: "Touw", description: "Verbindt materialen tot gereedschap." },
+  axe: {
+    label: "Bijl",
+    description: "Verzamelt twee stukken hout per keer uit bomen.",
+  },
+  pickaxe: {
+    label: "Houweel",
+    description: "Verzamelt twee stenen per keer uit rotsen.",
+  },
+  torch: {
+    label: "Fakkel",
+    description: "Activeren in de tas vergroot het zicht van 25 naar 35 meter.",
+  },
+  basket: {
+    label: "Draagmand",
+    description:
+      "Eén mand in de tas geeft 12 extra plekken; meerdere manden stapelen niet.",
+  },
+  workbench: {
+    label: "Werkbank",
+    description: "Neerleggen om binnen interactieafstand een houweel te maken.",
+  },
+  campfire: {
+    label: "Kampvuur",
+    description:
+      "Neerleggen en activeren voor 35 meter zicht binnen 10 meter van het vuur.",
+  },
+} as const;
+export type ItemKind = keyof typeof ITEMS;
+export interface CraftingRecipe {
+  id: Exclude<ItemKind, "wood" | "stone" | "fiber" | "flint" | "resin">;
+  ingredients: Partial<Record<ItemKind, number>>;
+  quantity: number;
+  station?: "workbench";
+}
+export const RECIPES: readonly CraftingRecipe[] = [
+  { id: "plank", ingredients: { wood: 1 }, quantity: 2 },
+  { id: "rope", ingredients: { fiber: 2 }, quantity: 1 },
+  { id: "axe", ingredients: { wood: 1, stone: 2, rope: 1 }, quantity: 1 },
+  { id: "workbench", ingredients: { plank: 4, rope: 1 }, quantity: 1 },
+  {
+    id: "pickaxe",
+    ingredients: { wood: 2, stone: 3, rope: 1 },
+    quantity: 1,
+    station: "workbench",
+  },
+  { id: "torch", ingredients: { wood: 1, resin: 1, fiber: 1 }, quantity: 1 },
+  { id: "basket", ingredients: { fiber: 3, rope: 2 }, quantity: 1 },
+  { id: "campfire", ingredients: { wood: 3, stone: 3, flint: 1 }, quantity: 1 },
+];
+export const BASE_INVENTORY_CAPACITY = 24;
+export function inventoryCapacity(
+  items: readonly Pick<WorldEntity, "itemKind">[],
+): number {
+  return (
+    BASE_INVENTORY_CAPACITY +
+    (items.some((e) => e.itemKind === "basket") ? 12 : 0)
+  );
+}
+export type EntityType = "tree" | "rock" | "artifact" | "cave" | "item";
 export interface WorldEntity {
   id: string;
   type: EntityType;
@@ -18,11 +87,13 @@ export interface WorldEntity {
   scale: number;
   kind?: "crystal" | "shell" | "relic";
   label?: string;
+  itemKind?: ItemKind;
   properties: { movable: boolean; inspectable: boolean };
 }
 export interface EntityState extends WorldEntity {
   ownerId: string | null;
   activated: boolean;
+  harvested?: number;
 }
 export interface Terrain {
   width: number;
@@ -62,6 +133,20 @@ export const actionSchema = z.discriminatedUnion("type", [
     interaction: z.literal("activate"),
   }),
   z.strictObject({ type: z.literal("pickup"), entityId }),
+  z.strictObject({ type: z.literal("gather"), entityId }),
+  z.strictObject({
+    type: z.literal("craft"),
+    recipeId: z.enum([
+      "plank",
+      "rope",
+      "axe",
+      "workbench",
+      "pickaxe",
+      "torch",
+      "basket",
+      "campfire",
+    ]),
+  }),
   z.strictObject({ type: z.literal("drop"), entityId, target: vectorSchema }),
   z.strictObject({
     type: z.literal("communicate"),
@@ -125,6 +210,12 @@ export interface AgentObservation {
   position: Vector3;
   orientation: number;
   inventory: string[];
+  inventoryCapacity?: number;
+  recipes?: readonly (CraftingRecipe & {
+    craftable: boolean;
+    missing: Partial<Record<ItemKind, number>>;
+    stationAvailable: boolean;
+  })[];
   lastAction?: ActionRecord;
   messages?: { from: string; text: string; tick: number }[];
   visibleEntities: {
@@ -137,6 +228,9 @@ export interface AgentObservation {
     ownerId: string | null;
     kind?: WorldEntity["kind"];
     label?: string;
+    itemKind?: ItemKind;
+    activated?: boolean;
+    remainingResources?: number;
     movable?: boolean;
     pickup?: {
       eligible: boolean;
@@ -213,8 +307,8 @@ export interface CycleMetrics {
 }
 export const simulationSchema = z.strictObject({
   worldId: z
-    .enum(["island-48291", "island-48291-v3"])
-    .default("island-48291-v3"),
+    .enum(["island-48291", "island-48291-v3", "island-48291-v4"])
+    .default("island-48291-v4"),
   timeScale: speedSchema.shape.timeScale.default(1),
   schedulerMode: schedulerSchema.shape.schedulerMode.default("live"),
   controller: z.enum(["scripted", "codex"]).default("scripted"),
@@ -328,7 +422,9 @@ export function entityRadius(entity: WorldEntity): number {
         ? 2.9
         : entity.type === "cave"
           ? 10
-          : 1.5) * entity.scale
+          : entity.type === "item"
+            ? 0.45
+            : 1.5) * entity.scale
   );
 }
 export function distance(a: Vector3, b: Vector3): number {

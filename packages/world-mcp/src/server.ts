@@ -50,7 +50,7 @@ export const worldTools = [
   {
     name: "world_interact",
     description:
-      "Propose activating a visible artifact within interaction range.",
+      "Activate an artifact, a carried torch (35m sight), or a placed campfire (35m sight when within 10m).",
     schema: z.strictObject({
       entityId,
       interaction: z.literal("activate"),
@@ -60,8 +60,32 @@ export const worldTools = [
   {
     name: "world_pickup",
     description:
-      "Collect a free portable artifact to carry and study it. Check observed pickup eligibility and distance; approach first when OUT_OF_RANGE. Capacity is one object. Explain why you choose this find or leave alternatives.",
+      "Collect a free portable material, crafted item or artifact into your bag. Check observed pickup eligibility and distance; approach first when OUT_OF_RANGE. Capacity is 24 objects, or 36 with a basket. Materials and tools stay in your bag. Explain why you choose this find or leave alternatives.",
     schema: z.strictObject({ entityId, ...reason }),
+  },
+  {
+    name: "world_gather",
+    description:
+      "Gather wood from a visible tree or stone from a visible unowned rock within interaction range. Each source contains 6 units. An axe/pickaxe in your bag doubles yield to 2. Check remainingResources and capacity.",
+    schema: z.strictObject({ entityId, ...reason }),
+  },
+  {
+    name: "world_craft",
+    description:
+      "Combine bag materials using an observation.recipes recipeId. Ingredients are consumed atomically and results enter your bag. A pickaxe requires a placed nearby visible workbench. Check missing materials, stationAvailable and capacity.",
+    schema: z.strictObject({
+      recipeId: z.enum([
+        "plank",
+        "rope",
+        "axe",
+        "workbench",
+        "pickaxe",
+        "torch",
+        "basket",
+        "campfire",
+      ]),
+      ...reason,
+    }),
   },
   {
     name: "world_drop",
@@ -143,7 +167,12 @@ export async function createWorldToolSession(
     if (proposal) return { success: false, error: "ONE_ACTION_PER_TURN" };
     const values = parsed.data as Record<string, unknown>;
     if (
-      ["world_inspect", "world_interact", "world_pickup"].includes(name) &&
+      [
+        "world_inspect",
+        "world_interact",
+        "world_pickup",
+        "world_gather",
+      ].includes(name) &&
       !frozen.visibleEntities.some((e) => e.id === values.entityId)
     )
       return { success: false, error: "ENTITY_NOT_OBSERVED" };

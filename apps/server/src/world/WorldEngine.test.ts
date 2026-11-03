@@ -12,8 +12,8 @@ describe("deterministic world", () => {
   });
   it("places all requested objects on terrain with unique IDs", () => {
     const world = generateWorld();
-    expect(world.entities).toHaveLength(213);
-    expect(new Set(world.entities.map((e) => e.id)).size).toBe(213);
+    expect(world.entities).toHaveLength(313);
+    expect(new Set(world.entities.map((e) => e.id)).size).toBe(313);
     for (const entity of world.entities) {
       expect(entity.position.y).toBeGreaterThan(1);
       expect(entity.position.y).toBeCloseTo(

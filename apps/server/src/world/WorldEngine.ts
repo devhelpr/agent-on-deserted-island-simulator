@@ -1,4 +1,8 @@
 import {
+  ITEMS,
+  RECIPES,
+  inventoryCapacity,
+  type ItemKind,
   actionSchema,
   actionExplanationSchema,
   AGENT_RADIUS,
@@ -330,12 +334,93 @@ export class WorldEngine {
       this.tick,
       this.observedEvents.get(agentId)!,
     );
+    const held = agent.inventory.map((id) => this.entities.get(id)!);
+    observation.inventoryCapacity = inventoryCapacity(held);
+    observation.recipes = RECIPES.map((recipe) => {
+      const missing: Partial<Record<ItemKind, number>> = {};
+      for (const [kind, count] of Object.entries(recipe.ingredients)) {
+        const shortage =
+          count! - held.filter((e) => e.itemKind === kind).length;
+        if (shortage > 0) missing[kind as ItemKind] = shortage;
+      }
+      const stationAvailable =
+        !recipe.station || this.hasStation(agent, recipe.station);
+      return {
+        ...recipe,
+        missing,
+        stationAvailable,
+        craftable:
+          !Object.keys(missing).length &&
+          stationAvailable &&
+          this.craftFits(agent, recipe.id),
+      };
+    });
     const last = this.lastActions.get(agentId);
     if (last) observation.lastAction = this.getAction(last);
     observation.messages = structuredClone(
       (this.messages.get(agentId) ?? []).slice(-20),
     );
     return observation;
+  }
+  private held(agent: AgentState) {
+    return agent.inventory.map((id) => this.entities.get(id)!);
+  }
+  private hasStation(agent: AgentState, kind: ItemKind) {
+    return this.entityList().some(
+      (e) =>
+        e.itemKind === kind &&
+        !e.ownerId &&
+        distance(agent.position, e.position) <=
+          INTERACTION_RANGE + entityRadius(e) &&
+        canSee(agent, e.position, this.entityList(), e.id),
+    );
+  }
+  private craftMaterials(agent: AgentState, recipeId: ItemKind) {
+    const recipe = RECIPES.find((r) => r.id === recipeId)!;
+    const held = this.held(agent);
+    const consumed: EntityState[] = [];
+    for (const [kind, count] of Object.entries(recipe.ingredients)) {
+      const matches = held.filter((e) => e.itemKind === kind).slice(0, count);
+      if (matches.length !== count) return null;
+      consumed.push(...matches);
+    }
+    return consumed;
+  }
+  private craftFits(agent: AgentState, recipeId: ItemKind) {
+    const recipe = RECIPES.find((r) => r.id === recipeId)!;
+    const consumed = this.craftMaterials(agent, recipeId);
+    if (!consumed) return false;
+    const remaining = this.held(agent).filter((e) => !consumed.includes(e));
+    return (
+      remaining.length + recipe.quantity <=
+      inventoryCapacity([...remaining, { itemKind: recipe.id }])
+    );
+  }
+  private giveItems(
+    agent: AgentState,
+    kind: ItemKind,
+    quantity: number,
+    action: ActionRecord,
+  ) {
+    const ids: string[] = [];
+    for (let i = 0; i < quantity; i++) {
+      const id = `item-${action.id}-${i}`;
+      this.entities.set(id, {
+        id,
+        type: "item",
+        itemKind: kind,
+        label: ITEMS[kind].label,
+        position: { ...agent.position },
+        rotation: 0,
+        scale: 1,
+        properties: { movable: true, inspectable: true },
+        ownerId: agent.id,
+        activated: false,
+      });
+      agent.inventory.push(id);
+      ids.push(id);
+    }
+    return ids;
   }
   private start(action: ActionRecord) {
     action.status = "running";
@@ -364,6 +449,7 @@ export class WorldEngine {
       if (
         !recipient ||
         recipient.id === agent.id ||
+        distance(agent.position, recipient.position) > 25 ||
         !canSee(agent, recipient.position, this.entityList())
       )
         return this.fail(action, "RECIPIENT_NOT_VISIBLE");
@@ -375,11 +461,34 @@ export class WorldEngine {
       this.event(action, "agent:message", input.message, recipient.id);
       return;
     }
+    if (input.type === "craft") {
+      const recipe = RECIPES.find((r) => r.id === input.recipeId)!;
+      const consumed = this.craftMaterials(agent, recipe.id);
+      if (!consumed) return this.fail(action, "MISSING_MATERIALS");
+      if (recipe.station && !this.hasStation(agent, recipe.station))
+        return this.fail(action, "WORKBENCH_REQUIRED");
+      if (!this.craftFits(agent, recipe.id))
+        return this.fail(action, "INVENTORY_FULL");
+      for (const item of consumed) this.entities.delete(item.id);
+      agent.inventory = agent.inventory.filter(
+        (id) => !consumed.some((e) => e.id === id),
+      );
+      const created = this.giveItems(agent, recipe.id, recipe.quantity, action);
+      this.finish(action, "succeeded", undefined, {
+        created,
+        consumed: consumed.map((e) => e.id),
+        recipeId: recipe.id,
+      });
+      return;
+    }
     const entity = this.entities.get(input.entityId);
     if (!entity) return this.fail(action, "ENTITY_NOT_FOUND");
     if (input.type === "drop") {
       if (entity.ownerId !== agent.id || !agent.inventory.includes(entity.id))
         return this.fail(action, "NOT_OWNER");
+      const remaining = this.held(agent).filter((e) => e.id !== entity.id);
+      if (remaining.length > inventoryCapacity(remaining))
+        return this.fail(action, "INVENTORY_FULL");
       const target = this.navigation.point(input.target.x, input.target.z);
       if (
         distance(agent.position, target) >
@@ -413,6 +522,32 @@ export class WorldEngine {
       !canSee(agent, entity.position, this.entityList(), entity.id)
     )
       return this.fail(action, "NOT_VISIBLE");
+    if (input.type === "gather") {
+      if (entity.ownerId || !["tree", "rock"].includes(entity.type))
+        return this.fail(action, "NOT_RESOURCE_SOURCE");
+      const remaining = 6 - (entity.harvested ?? 0);
+      if (remaining <= 0) return this.fail(action, "RESOURCE_DEPLETED");
+      const held = this.held(agent);
+      const tool = entity.type === "tree" ? "axe" : "pickaxe";
+      const quantity = Math.min(
+        remaining,
+        held.some((e) => e.itemKind === tool) ? 2 : 1,
+      );
+      if (held.length + quantity > inventoryCapacity(held))
+        return this.fail(action, "INVENTORY_FULL");
+      entity.harvested = (entity.harvested ?? 0) + quantity;
+      const created = this.giveItems(
+        agent,
+        entity.type === "tree" ? "wood" : "stone",
+        quantity,
+        action,
+      );
+      this.finish(action, "succeeded", undefined, {
+        created,
+        remainingResources: 6 - entity.harvested,
+      });
+      return;
+    }
     if (input.type === "inspect") {
       if (!entity.properties.inspectable)
         return this.fail(action, "NOT_INSPECTABLE");
@@ -421,12 +556,25 @@ export class WorldEngine {
         kind: entity.kind,
         label: entity.label,
         properties: { ...entity.properties },
+        itemKind: entity.itemKind,
+        description: entity.itemKind
+          ? ITEMS[entity.itemKind].description
+          : undefined,
+        remainingResources: ["tree", "rock"].includes(entity.type)
+          ? 6 - (entity.harvested ?? 0)
+          : undefined,
         activated: entity.activated,
       });
       return;
     }
     if (input.type === "interact") {
-      if (entity.type !== "artifact")
+      if (entity.itemKind === "campfire" && entity.ownerId)
+        return this.fail(action, "PLACE_FIRST");
+      if (
+        entity.type !== "artifact" &&
+        entity.itemKind !== "torch" &&
+        entity.itemKind !== "campfire"
+      )
         return this.fail(action, "UNSUPPORTED_INTERACTION");
       entity.activated = true;
       this.finish(action, "succeeded", undefined, { activated: true });
@@ -434,7 +582,11 @@ export class WorldEngine {
     }
     if (!entity.properties.movable) return this.fail(action, "NOT_MOVABLE");
     if (entity.ownerId) return this.fail(action, "OBJECT_UNAVAILABLE");
-    if (agent.inventory.length) return this.fail(action, "INVENTORY_FULL");
+    if (
+      agent.inventory.length + 1 >
+      inventoryCapacity([...this.held(agent), entity])
+    )
+      return this.fail(action, "INVENTORY_FULL");
     entity.ownerId = agent.id;
     entity.position = { ...agent.position };
     agent.inventory.push(entity.id);

@@ -7,7 +7,11 @@ import type {
 const outcomes: Record<string, string> = {
   OUT_OF_RANGE: "Het object is nog te ver weg; eerst dichterbij lopen.",
   OBJECT_UNAVAILABLE: "Het object is inmiddels in bezit van een agent.",
-  INVENTORY_FULL: "De inventaris is vol; er past één object in.",
+  INVENTORY_FULL: "De voorwerpentas heeft onvoldoende vrije plekken.",
+  MISSING_MATERIALS: "Er ontbreken materialen voor dit recept.",
+  WORKBENCH_REQUIRED: "Leg een werkbank neer en ga er dichtbij staan.",
+  RESOURCE_DEPLETED: "Deze bron bevat geen materialen meer.",
+  PLACE_FIRST: "Leg dit voorwerp eerst neer.",
   NOT_MOVABLE: "Dit object kan niet worden gedragen.",
   NOT_VISIBLE: "Het object is bij uitvoering niet zichtbaar.",
   UNREACHABLE: "De navigatie vindt geen begaanbare route naar het doel.",
@@ -21,6 +25,10 @@ export const outcomeReason = (error?: string) =>
   error ? (outcomes[error] ?? error) : "";
 export function actionTitle(action: WorldActionInput) {
   switch (action.type) {
+    case "craft":
+      return `Maken · ${action.recipeId}`;
+    case "gather":
+      return `Materialen verzamelen · ${action.entityId}`;
     case "pickup":
       return `Oppakken · ${action.entityId}`;
     case "inspect":

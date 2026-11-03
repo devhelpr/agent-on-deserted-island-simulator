@@ -1,3 +1,7 @@
+import {
+  ITEMS,
+  inventoryCapacity,
+} from "../../../packages/shared/src/index.js";
 import { io, type Socket } from "socket.io-client";
 import type {
   AgentMemory,
@@ -33,8 +37,8 @@ app.innerHTML = `
 <div id="live-panel"><div class="timeline"><p class="eyebrow">RECENTE ACTIES</p><div class="simulation-controls"><label>Agentfilter voor recente acties<select id="event-agent"><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label></div><ol id="events"><li>Wachten op de eerste actie…</li></ol></div><div class="timeline"><p class="eyebrow">VASTGELEGDE BESLISSINGEN</p><p class="decision-note">Automatisch bijgewerkt · publieke motivaties en afwegingen, geen verborgen interne gedachten.</p><ol id="decision-list"><li>Bekijk alle beslissingen of filter op een agent.</li></ol></div></div>
 </section><aside><div class="panel-heading"><p class="eyebrow">IN HET VELD</p><h2>De verkenners<span>03</span></h2></div><div id="agents"></div>
 <div class="agent-tools"><button id="cancel-action" type="button" disabled>Actie annuleren</button><button id="observe" type="button" disabled>Waarneming bekijken</button><label>Agentfilter voor beslissingen<select id="decision-agent" disabled><option value="">Alle agents</option><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="gamma">Gamma</option></select></label><button id="decisions" type="button" disabled>Beslissingen bekijken</button><p id="observation" aria-live="polite">Selecteer een verkenner om de camera te richten.</p></div>
-<div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents begroeten elkaar, onderzoeken objecten en verzamelen kristallen, schelpen en relikwieën. Eén object kan maar één eigenaar hebben.</p></div></div>
-<div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
+<div class="route-note"><span class="note-icon">⌁</span><div><h3>Een gedeelde wereld</h3><p>Agents verzamelen materialen, combineren ze tot gereedschap en bouwen een kamp. Bekijk hun voorwerpentas voor vondsten en maakmogelijkheden.</p></div></div>
+<div class="legend"><p class="eyebrow">OP HET EILAND</p><div><i class="legend-tree"></i><span>Bomen</span><b id="trees">—</b></div><div><i class="legend-rock"></i><span>Rotsen</span><b id="rocks">—</b></div><div><i class="legend-artifact"></i><span>Artefacten</span><b id="artifacts">—</b></div><div><i class="legend-artifact"></i><span>Materialen en maakwerk</span><b id="items">—</b></div><div><i class="legend-cave"></i><span>Grot</span><b id="caves">—</b></div></div>
 <div class="next"><p class="eyebrow">EXPERIMENTEN</p><h3>Samen leren.</h3><p>Vergelijk cycli, volg het beslisbudget en controleer herinneringen via hun bronnen.</p><span>06 / 06 <span>→</span></span></div></aside></main><footer><span>AGENT ISLAND <span class="footer-divider">/</span> Deterministische wereld · <span id="generator-version">Generator v3</span></span><span id="clock-details">20 ticks/s virtueel · maximaal 10 updates/s</span></footer>`;
 const el = (id: string) => document.getElementById(id)!;
 let scene: IslandScene | undefined;
@@ -158,6 +162,10 @@ function updateStatus(next: SimulationStatus) {
 function update(next: WorldStateDto) {
   state = next;
   scene?.update(next);
+  el("entity-count").textContent = String(next.entities.length);
+  el("items").textContent = String(
+    next.entities.filter((e) => e.type === "item" && !e.ownerId).length,
+  );
   const seconds = Math.floor(next.simulationTimeMs / 1000);
   el("world-time").textContent = `${Math.floor(seconds / 60)
     .toString()
@@ -205,9 +213,87 @@ function update(next: WorldStateDto) {
     ]
       .map((n) => n.toFixed(1))
       .join(" / ");
-    card.querySelector(".agent-footer")!.textContent = agent.inventory.length
-      ? `Draagt ${agent.inventory.map((id) => next.entities.find((e) => e.id === id)?.label ?? id).join(", ")}`
-      : "Inventaris leeg · Bekijk van dichtbij ↗";
+    const held = agent.inventory
+      .map((id) => next.entities.find((e) => e.id === id))
+      .filter((e) => e !== undefined);
+    const capacity = inventoryCapacity(held);
+    card.querySelector(".agent-footer")!.textContent =
+      `${agent.inventory.length} / ${capacity} plekken in voorwerpentas`;
+    let bag = document.getElementById(`bag-${agent.id}`);
+    if (!bag) {
+      bag = document.createElement("section");
+      bag.id = `bag-${agent.id}`;
+      bag.className = "inventory-bag";
+      bag.setAttribute("aria-label", `Voorwerpentas van ${agent.name}`);
+      const heading = document.createElement("div");
+      heading.className = "bag-heading";
+      const summary = document.createElement("span");
+      summary.className = "bag-summary";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "bag-toggle";
+      toggle.textContent = "Toon inhoud";
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-controls", `bag-contents-${agent.id}`);
+      const contents = document.createElement("div");
+      contents.id = `bag-contents-${agent.id}`;
+      contents.className = "bag-contents";
+      contents.hidden = true;
+      toggle.addEventListener("click", () => {
+        contents.hidden = !contents.hidden;
+        toggle.setAttribute("aria-expanded", String(!contents.hidden));
+        toggle.textContent = contents.hidden ? "Toon inhoud" : "Verberg inhoud";
+      });
+      heading.append(summary, toggle);
+      bag.append(heading, contents);
+      card.after(bag);
+    }
+    const groups = new Map<
+      string,
+      { label: string; count: number; description?: string; activated: boolean }
+    >();
+    for (const item of held) {
+      const key = item.itemKind ?? item.kind ?? item.type;
+      const group = groups.get(key) ?? {
+        label: item.label ?? item.id,
+        count: 0,
+        activated: false,
+        description: item.itemKind
+          ? ITEMS[item.itemKind].description
+          : undefined,
+      };
+      group.count++;
+      group.activated ||= item.activated;
+      groups.set(key, group);
+    }
+    bag.querySelector(".bag-summary")!.textContent =
+      `Voorwerpen · ${agent.inventory.length}/${capacity} · ${groups.size} soorten`;
+    const signature = JSON.stringify([...groups]);
+    if (bag.dataset.contents !== signature) {
+      bag.dataset.contents = signature;
+      const contents = bag.querySelector(".bag-contents")!;
+      contents.replaceChildren();
+      if (!held.length) {
+        const empty = document.createElement("p");
+        empty.textContent =
+          "De tas is nog leeg. Materialen en vondsten verschijnen hier.";
+        contents.append(empty);
+      }
+      const list = document.createElement("ul");
+      for (const group of groups.values()) {
+        const row = document.createElement("li");
+        const name = document.createElement("strong");
+        name.textContent = `${group.count} × ${group.label}${group.activated ? " · actief" : ""}`;
+        row.append(name);
+        if (group.description) {
+          const description = document.createElement("small");
+          description.textContent = group.description;
+          row.append(description);
+        }
+        list.append(row);
+      }
+      contents.append(list);
+    }
     const current = next.actions.find((a) => a.id === agent.activeActionId);
     card.querySelector(".agent-intent")!.textContent =
       current?.motivation ?? "";
@@ -371,6 +457,7 @@ socket.on("world:snapshot", (snapshot) => {
     ["trees", "tree"],
     ["rocks", "rock"],
     ["artifacts", "artifact"],
+    ["items", "item"],
     ["caves", "cave"],
   ])
     el(id!).textContent = String(

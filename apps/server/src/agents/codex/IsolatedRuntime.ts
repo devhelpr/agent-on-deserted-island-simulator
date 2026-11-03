@@ -18,6 +18,8 @@ export interface CodexRuntime {
 }
 export type RuntimeFactory = () => Promise<CodexRuntime>;
 export const ISLAND_CONFIG = `
+model = "gpt-6-luna"
+model_reasoning_effort = "high"
 cli_auth_credentials_store = "file"
 approval_policy = "never"
 default_permissions = "island"

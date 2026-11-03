@@ -4,6 +4,8 @@
 
 Architectuurvoorstel v1.0
 
+> Implementatie-update: generator v4 biedt een voorwerpentas met 24 plekken per agent (36 met een draagmand), vijf vindbare materialen en acht recepten. Agents kunnen materialen verzamelen uit bomen en rotsen, tussenproducten maken en gereedschap, een werkbank en verlichting gebruiken. De tas wordt uitsluitend in het dashboard getoond, met een samenvatting en ‘Toon inhoud’ per agent. Zie de README voor de actuele recepten en spelregels; de tekst hieronder beschrijft het oorspronkelijke ontwerp.
+
 TypeScript
 
 Local-first
@@ -1084,7 +1086,7 @@ Er zijn verleidelijke uitbreidingen die ik voorlopig zou uitstellen:
 
 - Volledige rigid-body physics.
 - Survivalmechanieken zoals honger en dorst.
-- Crafting en inventarissystemen met veel recepten.
+- Een onbeperkt crafting- en bouwsysteem (de implementatie bevat inmiddels acht vaste recepten).
 - Een volledige dag/nachtcyclus.
 - Dynamisch veranderend weer.
 - Multimodale waarneming met screenshots.

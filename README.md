@@ -78,13 +78,28 @@ In **Live** mode, the world keeps running while agents decide. In **Experiment**
 
 ## World, navigation, and interactions
 
-Generator v3 retains seed `48291`, a 500 × 500 m heightmap with 81 × 81 samples, 120 trees, 80 rocks, 12 artifacts, and one cave. Version 3 adds named portable artifact kinds and nearby pickups, keeping the three spawn corridors clear. Existing stored worlds retain their original definition; create a new run for the new artifacts. The same version and configuration produce the same definition. Runtime state and outgoing snapshots are independent copies.
+Generator v4 retains seed `48291`, a 500 × 500 m heightmap with 81 × 81 samples, 120 trees, 80 rocks, 12 artifacts, and one cave. It adds 100 scattered materials (wood, stone, fiber, flint and resin), including supplies near the spawn area. Existing stored worlds retain their original definition; create a **new run** to explore the expanded island. The same version and configuration produce the same definition. Runtime state and outgoing snapshots are independent copies.
 
 Navigation uses a triangular navmesh derived from the terrain. A* searches across triangle centers; edges and simplified path segments are checked for water, excessively steep slopes, and objects with clearance for the agent. Each movement step also checks current objects and other agents. Picking up or dropping an object invalidates the obstacle index. A route that remains blocked for 5 virtual seconds ends with `PATH_BLOCKED`; the scripted policy then chooses again. This is simple kinematic collision detection, without rigid-body physics or cooperative path planning.
 
 Every action receives an ID and follows the status sequence `queued → running → succeeded/failed/cancelled`. Each agent can have one pending action. At the start of a tick, conflicts are resolved in agent-ID order, regardless of request arrival order. Distance, availability, visibility, and ownership are checked again at execution time.
 
-Supported actions: `move`, `look`, `wait`, `inspect`, `interact` (activate an artifact), `pickup` (a portable artifact or movable rock), and `drop`. An agent carries at most one object. Dropped objects cannot overlap another object or agent. Target elevation is always calculated from the terrain by the server.
+Supported actions: `move`, `look`, `wait`, `inspect`, `interact` (activate an artifact, torch or placed campfire), `pickup`, `drop`, `gather`, and `craft`. An agent's bag holds 24 objects of different kinds; one carried basket increases capacity to 36 (no stacking). Dashboard cards show usage and the number of kinds, with a small **Toon inhoud** button for grouped quantities and item uses. Carried objects are hidden in 3D; dropped objects appear on the island. Dropped objects cannot overlap another object or agent. Target elevation is calculated from the terrain by the server.
+
+Trees and unowned rocks each contain six material units. `gather` collects one wood/stone; an axe/pickaxe in the bag collects two. Depleted sources remain landmarks. `craft` takes a recipe ID, consumes only the agent's own materials atomically and creates bag items. Missing materials, insufficient bag capacity or a missing station leave the inventory intact. Observations include all recipes, missing ingredients, station availability and current craftability; both Codex and scripted agents can use them.
+
+| Recipe | Ingredients | Result / use |
+| --- | --- | --- |
+| `plank` | 1 wood | 2 planks for construction |
+| `rope` | 2 fiber | 1 rope for binding |
+| `axe` | 1 wood + 2 stone + 1 rope | Doubles wood gathering |
+| `workbench` | 4 planks + 1 rope | Place nearby for advanced crafting |
+| `pickaxe` | 2 wood + 3 stone + 1 rope; nearby placed workbench | Doubles stone gathering |
+| `torch` | 1 wood + 1 resin + 1 fiber | Activate while carrying for 35 m sight |
+| `basket` | 3 fiber + 2 rope | Adds 12 bag slots while carried |
+| `campfire` | 3 wood + 3 stone + 1 flint | Place and activate for 35 m sight within 10 m |
+
+Crafted items, consumed materials, source depletion and lighting persist in checkpoints and replays and reset with the world each cycle. Recipes are deliberately bounded rules; agents choose their own projects and combinations of actions.
 
 Perception uses a horizontal range of 25 m, a 120° field of view, and 2D occlusion by trees, rocks, and the cave. Interaction range is 3 m from an object's boundary. Agents always know their own inventory. Each event's audience is determined when it occurs; later observations do not grant access to global history. The human viewer sees the entire world, while agent observations remain limited. Terrain hills do not yet block visibility in this version.
 
@@ -121,7 +136,7 @@ Perception-based consolidation is deterministic and makes no additional model ca
 | GET | `/api/simulations/:id/actions/:actionId` | Action result |
 | POST | `/api/simulations/:id/agents/:agentId/actions/:actionId/cancel` | Cancel a pending action |
 
-A new run optionally accepts `worldId: "island-48291-v3"` (the legacy `"island-48291"` value remains accepted as an alias), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). Pass `codexAgentIds: ["alpha", "beta", "gamma"]` for three Codex agents and `experiment: { "maxCycles": 2, "decisionBudgetPerAgentPerCycle": 120 }` to bound the experiment (1–100 cycles, 1–10,000 attempts per agent per cycle). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
+A new run optionally accepts `worldId: "island-48291-v4"` (legacy IDs remain accepted as aliases for new runs), `timeScale`, `schedulerMode`, `controller: "scripted"/"codex"`, and `codexAgentIds` (default: `["alpha"]`). Pass `codexAgentIds: ["alpha", "beta", "gamma"]` for three Codex agents and `experiment: { "maxCycles": 2, "decisionBudgetPerAgentPerCycle": 120 }` to bound the experiment (1–100 cycles, 1–10,000 attempts per agent per cycle). An accepted action returns HTTP 202 with `{ accepted: true, actionId }`; invalid input returns 400, unknown resources return 404, and conflicts return 409. The action ID provides access to the eventual outcome. This is a local research API for the human operator; model agents only receive the internal identity-bound MCP session. Model decisions can be read through `GET /api/simulations/:id/agents/:agentId/decisions`.
 
 Socket.IO sends `world:snapshot` on connection, reconnection, and subscription. `simulation:subscribe(id, ack)` switches rooms. `world:delta` contains `{ simulationId, state }`, and `simulation:state` contains clock status. Both are sent at most 10 times per real second, regardless of acceleration. Control changes also trigger an immediate status event. The viewer interpolates between positions. In this version, a delta contains the complete current entity list and bounded recent actions/events; further delta compression is future work.
 

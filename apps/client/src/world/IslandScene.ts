@@ -197,6 +197,23 @@ export class IslandScene {
           opening.position.set(0, 1.5, 5.5);
           group.add(opening);
         }
+      } else if (entity.type === "item") {
+        group.add(
+          new THREE.Mesh(
+            new THREE.DodecahedronGeometry(0.55, 0),
+            new THREE.MeshStandardMaterial({
+              color:
+                entity.itemKind === "fiber"
+                  ? 0x809e55
+                  : entity.itemKind === "stone" || entity.itemKind === "flint"
+                    ? 0x92978f
+                    : entity.itemKind === "resin"
+                      ? 0xdaa34d
+                      : 0x9d7048,
+              flatShading: true,
+            }),
+          ),
+        );
       } else {
         const artifact = new THREE.Mesh(
           entity.kind === "shell"
@@ -253,12 +270,38 @@ export class IslandScene {
       agent.group.rotation.y = data.orientation;
       agent.receivedAt = performance.now();
     }
+    const present = new Set(state.entities.map((e) => e.id));
+    for (const [id, group] of this.entities) {
+      if (!present.has(id)) {
+        this.world.remove(group);
+        this.disposeGroup(group);
+        this.entities.delete(id);
+      }
+    }
     for (const entity of state.entities) {
-      const group = this.entities.get(entity.id);
+      let group = this.entities.get(entity.id);
+      if (!group && entity.type === "item" && !entity.ownerId) {
+        group = new THREE.Group();
+        const color =
+          entity.itemKind === "campfire"
+            ? 0xd87c36
+            : entity.itemKind === "workbench"
+              ? 0x936642
+              : 0x8d9867;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.8, 0.7, 0.8),
+          new THREE.MeshStandardMaterial({ color }),
+        );
+        mesh.position.y = 0.4;
+        group.add(mesh);
+        this.world.add(group);
+        this.entities.set(entity.id, group);
+      }
       if (!group) continue;
+      group.visible = !entity.ownerId;
       group.position.set(
         entity.position.x,
-        entity.position.y + (entity.ownerId ? 6 : 0),
+        entity.position.y,
         entity.position.z,
       );
       if (entity.type === "artifact")

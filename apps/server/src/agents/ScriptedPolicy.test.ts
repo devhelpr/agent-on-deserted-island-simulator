@@ -157,3 +157,49 @@ describe("purposeful artifact collection", () => {
     }
   });
 });
+
+it("collects varied bag materials and autonomously crafts and uses multi-step tools", () => {
+  const kinds = [
+    "wood",
+    "wood",
+    "resin",
+    "fiber",
+    "fiber",
+    "fiber",
+    "stone",
+    "stone",
+  ] as const;
+  const engine = new WorldEngine(
+    flatWorld(
+      kinds.map((itemKind, i) => ({
+        ...entity(`material-${i}`, "item", 0, 2),
+        itemKind,
+        properties: { movable: true, inspectable: true },
+      })),
+    ),
+    [{ id: "alpha", name: "Alpha", position: p(0, 0) }],
+  );
+  const policy = createScriptedPolicy();
+  let maxHeld = 0;
+  for (let i = 0; i < 80; i++) {
+    if (!engine.getAgents()[0]!.activeActionId) {
+      const proposal = policy(engine.observe("alpha")!) as PolicyProposal;
+      engine.submitAction("alpha", proposal.action, {
+        motivation: proposal.motivation,
+      });
+    }
+    engine.step();
+    maxHeld = Math.max(maxHeld, engine.getAgents()[0]!.inventory.length);
+  }
+  expect(maxHeld).toBeGreaterThan(1);
+  expect(engine.getState().entities).toContainEqual(
+    expect.objectContaining({
+      itemKind: "torch",
+      ownerId: "alpha",
+      activated: true,
+    }),
+  );
+  expect(engine.getState().entities).toContainEqual(
+    expect.objectContaining({ itemKind: "axe", ownerId: "alpha" }),
+  );
+});

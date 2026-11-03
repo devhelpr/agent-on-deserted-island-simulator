@@ -1,5 +1,6 @@
 import {
   distance,
+  inventoryCapacity,
   INTERACTION_RANGE,
   entityRadius,
   type AgentObservation,
@@ -18,8 +19,16 @@ export function canSee(
   targetId?: string,
 ): boolean {
   const d = distance(agent.position, target);
+  const lit = entities.some(
+    (e) =>
+      e.activated &&
+      ((e.itemKind === "torch" && e.ownerId === agent.id) ||
+        (e.itemKind === "campfire" &&
+          !e.ownerId &&
+          distance(agent.position, e.position) <= 10)),
+  );
   if (
-    d > 25 ||
+    d > (lit ? 35 : 25) ||
     (d > 0.001 &&
       Math.abs(
         angleDifference(
@@ -35,6 +44,7 @@ export function canSee(
       e.id !== targetId &&
       !e.ownerId &&
       e.type !== "artifact" &&
+      e.type !== "item" &&
       distance(e.position, agent.position) < d &&
       segmentDistance(e.position, agent.position, target) < entityRadius(e),
   );
@@ -46,6 +56,8 @@ export function observe(
   tick: number,
   observedEvents: WorldEvent[],
 ): AgentObservation {
+  const held = entities.filter((e) => e.ownerId === agent.id);
+  const capacity = inventoryCapacity(held);
   return {
     tick,
     agentId: agent.id,
@@ -70,19 +82,27 @@ export function observe(
         ownerId: e.ownerId,
         kind: e.kind,
         label: e.label,
+        itemKind: e.itemKind,
+        activated: e.activated,
+        remainingResources: ["tree", "rock"].includes(e.type)
+          ? 6 - (e.harvested ?? 0)
+          : undefined,
         movable: e.properties.movable,
         pickup: {
           eligible:
             e.properties.movable &&
             !e.ownerId &&
-            !agent.inventory.length &&
+            agent.inventory.length < inventoryCapacity([...held, e]) &&
             distance(agent.position, e.position) <=
               INTERACTION_RANGE + entityRadius(e),
           blocker: !e.properties.movable
             ? "NOT_MOVABLE"
             : e.ownerId
               ? "OBJECT_UNAVAILABLE"
-              : agent.inventory.length
+              : agent.inventory.length >=
+                  (e.itemKind === "basket"
+                    ? inventoryCapacity([...held, e])
+                    : capacity)
                 ? "INVENTORY_FULL"
                 : distance(agent.position, e.position) >
                     INTERACTION_RANGE + entityRadius(e)

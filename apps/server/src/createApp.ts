@@ -91,9 +91,9 @@ export function createApp(
   app.get("/api/worlds", (c) =>
     c.json([
       {
-        id: "island-48291-v3",
+        id: "island-48291-v4",
         seed: 48291,
-        version: 3,
+        version: 4,
       },
     ]),
   );

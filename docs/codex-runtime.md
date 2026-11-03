@@ -13,7 +13,7 @@ npm run dev
 
 Zorg dat `codex` op PATH staat en dat `codex login` is afgerond. De geteste login staat in het bestand `auth.json` onder `CODEX_HOME` of standaard `~/.codex`. Alleen een login in de OS-keychain zonder dit bestand wordt niet automatisch overgenomen. Een bestaande `OPENAI_API_KEY` in de serveromgeving is ook bruikbaar. Sleutels worden niet via het dashboard ingevoerd of teruggestuurd.
 
-Kies in het dashboard bij **Nieuwe run met** de optie **Codex Alpha + 2 scripted** en klik op **Nieuwe run**. Dit start echte modelaanroepen met de bestaande login. Het model wordt niet hard gecodeerd: de geïsoleerde CLI gebruikt zijn eigen standaardmodel. `AGENT_ISLAND_CODEX_BIN` kan de executablelocatie instellen, serverzijdig via de omgeving.
+Kies in het dashboard bij **Nieuwe run met** de optie **Codex Alpha + 2 scripted** en klik op **Nieuwe run**. Dit start echte modelaanroepen met de bestaande login. Alle Codex-agents gebruiken `gpt-6-luna` met `model_reasoning_effort = "high"`, vast ingesteld in de geïsoleerde runtimeconfiguratie (`IsolatedRuntime.ts`). De instelling geldt zodra een nieuwe runtime wordt gestart; herstart de server om ook bestaande runtimes te vervangen. `AGENT_ISLAND_CODEX_BIN` kan de executablelocatie instellen, serverzijdig via de omgeving.
 
 De API kan een andere set eilandagents kiezen:
 

@@ -879,3 +879,54 @@ select:focus-visible {
   font-size: 12px;
   line-height: 1.6;
 }
+
+.inventory-bag {
+  margin: -6px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid #d6e0d8;
+  border-radius: 0 0 8px 8px;
+  background: #f4f7f2;
+}
+.bag-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bag-summary {
+  font-size: 11px;
+  color: #475e53;
+}
+.bag-toggle {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 5px 7px;
+  border: 1px solid #b8cabc;
+  border-radius: 4px;
+  background: #fff;
+  color: #254b3b;
+  cursor: pointer;
+}
+.bag-toggle:focus-visible {
+  outline: 2px solid #26735a;
+  outline-offset: 2px;
+}
+.bag-contents {
+  font-size: 12px;
+  text-align: left;
+}
+.bag-contents ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+}
+.bag-contents li {
+  padding: 7px 0;
+  border-top: 1px solid #dce5dc;
+}
+.bag-contents small {
+  display: block;
+  margin-top: 3px;
+  color: #586c61;
+  line-height: 1.5;
+}

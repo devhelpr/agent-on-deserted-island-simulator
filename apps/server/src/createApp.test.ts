@@ -86,7 +86,7 @@ describe("simulation API", () => {
     const snapshot = (await (
       await app.request("/api/world")
     ).json()) as WorldSnapshot;
-    expect(snapshot.definition.entities).toHaveLength(213);
+    expect(snapshot.definition.entities).toHaveLength(313);
     expect(snapshot.state.agents.map((a) => a.id)).toEqual([
       "alpha",
       "beta",

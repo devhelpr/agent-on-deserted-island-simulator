@@ -146,3 +146,47 @@ it("preserves public artifact assessments as metadata rather than world-action i
     await session.close();
   }
 });
+
+it("exposes crafting and gathering through the identity-bound session", async () => {
+  const session = await createWorldToolSession(observation);
+  try {
+    expect(
+      (
+        await session.call("world_gather", {
+          entityId: "hidden-tree",
+          motivation: "Collect wood",
+        })
+      ).success,
+    ).toBe(false);
+    expect(
+      (
+        await session.call("world_craft", {
+          recipeId: "invented",
+          motivation: "Try recipe",
+        })
+      ).success,
+    ).toBe(false);
+    expect(
+      (
+        await session.call("world_craft", {
+          recipeId: "rope",
+          motivation: "Bind collected fibers",
+        })
+      ).success,
+    ).toBe(true);
+    expect(session.proposed()!.action).toEqual({
+      type: "craft",
+      recipeId: "rope",
+    });
+    expect(
+      (
+        await session.call("world_craft", {
+          recipeId: "plank",
+          motivation: "Second action",
+        })
+      ).success,
+    ).toBe(false);
+  } finally {
+    await session.close();
+  }
+});

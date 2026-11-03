@@ -1,4 +1,6 @@
 import {
+  ITEMS,
+  type ItemKind,
   terrainHeight,
   type WorldDefinition,
   type WorldEntity,
@@ -12,6 +14,7 @@ export interface WorldConfig {
   rocks: number;
   artifacts: number;
   caves: number;
+  materials?: number;
 }
 export const DEFAULT_WORLD: WorldConfig = {
   seed: 48291,
@@ -38,9 +41,13 @@ export function generateWorld(
     !Number.isInteger(config.seed) ||
     !Number.isFinite(config.size) ||
     config.size < 100 ||
-    [config.trees, config.rocks, config.artifacts, config.caves].some(
-      (n) => !Number.isInteger(n) || n < 0 || n > 10000,
-    )
+    [
+      config.trees,
+      config.rocks,
+      config.artifacts,
+      config.caves,
+      config.materials ?? 100,
+    ].some((n) => !Number.isInteger(n) || n < 0 || n > 10000)
   ) {
     throw new Error("Invalid world configuration");
   }
@@ -127,9 +134,49 @@ export function generateWorld(
           "World configuration is too dense to place all objects",
         );
     }
+  const materials: ItemKind[] = ["wood", "stone", "fiber", "flint", "resin"];
+  for (let i = 0; i < (config.materials ?? 100); i++) {
+    let placed = false;
+    for (let attempt = 0; attempt < 2000; attempt++) {
+      const p =
+        i < 25 && attempt === 0
+          ? position(-24 - (i % 5) * 3, -24 + Math.floor(i / 5) * 3)
+          : position(
+              (random() - 0.5) * config.size,
+              (random() - 0.5) * config.size,
+            );
+      if (
+        p.y < 1 ||
+        (p.x > -21 && Math.hypot(p.x, p.z) < 30) ||
+        entities.some(
+          (e) =>
+            Math.hypot(e.position.x - p.x, e.position.z - p.z) <
+            (e.type === "item" ? 2 : 4),
+        )
+      )
+        continue;
+      const itemKind = materials[i % materials.length]!;
+      entities.push({
+        id: `material-${i + 1}`,
+        type: "item",
+        itemKind,
+        label: ITEMS[itemKind].label,
+        position: p,
+        rotation: mm(random() * Math.PI * 2),
+        scale: 1,
+        properties: { movable: true, inspectable: true },
+      });
+      placed = true;
+      break;
+    }
+    if (!placed)
+      throw new Error(
+        "World configuration is too dense to place all materials",
+      );
+  }
   return {
-    id: `island-${config.seed}-v3`,
-    version: 3,
+    id: `island-${config.seed}-v4`,
+    version: 4,
     seed: config.seed,
     terrain,
     spawnPoints: [position(-18, -18), position(-12, -18), position(-6, -18)],

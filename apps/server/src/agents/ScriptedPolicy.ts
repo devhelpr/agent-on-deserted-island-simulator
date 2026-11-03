@@ -1,4 +1,7 @@
 import {
+  ITEMS,
+  RECIPES,
+  type ItemKind,
   AGENT_RADIUS,
   INTERACTION_RANGE,
   TICK_MS,
@@ -11,6 +14,7 @@ import {
 import type { DecisionPolicy, PolicyProposal } from "./AgentScheduler.js";
 interface PolicyState {
   turn: number;
+  crafted?: Set<ItemKind>;
   processedAction?: string;
   inspected: Set<string>;
   activated: Set<string>;
@@ -45,6 +49,10 @@ export function createScriptedPolicy(): DecisionPolicy {
     if (fresh) {
       state.processedAction = previous.id;
       const a = previous.input;
+      if (previous.status === "succeeded" && a.type === "craft") {
+        state.crafted ??= new Set();
+        state.crafted.add(a.recipeId);
+      }
       if (previous.status === "succeeded" && "entityId" in a) {
         if (a.type === "inspect") state.inspected.add(a.entityId);
         if (a.type === "interact") state.activated.add(a.entityId);
@@ -98,7 +106,7 @@ export function createScriptedPolicy(): DecisionPolicy {
               "Deze vondst heb ik al onderzocht en bewust neergelegd; ik pak hem niet opnieuw op.";
           } else if (o.inventory.length)
             reason =
-              "Mijn inventaris heeft één plek en is bezet; eerst rond ik mijn huidige vondst af.";
+              "Een deel van mijn tas is bezet; ik onderzoek eerst mijn huidige vondst en bewaar ruimte voor andere materialen.";
           else if ((state.deferred.get(e.id) ?? 0) > o.tick)
             reason =
               "De vorige poging bij dit artefact mislukte; ik geef de route of eigenaar even tijd en probeer later opnieuw.";
@@ -140,6 +148,172 @@ export function createScriptedPolicy(): DecisionPolicy {
       },
     });
 
+    // Material worlds use a recipe planner; legacy artifact-only worlds keep their exploration policy.
+    if (o.recipes && o.visibleEntities.some((e) => e.type === "item")) {
+      const held = o.visibleEntities.filter((e) => e.ownerId === o.agentId);
+      const count = (kind: ItemKind) =>
+        held.filter((e) => e.itemKind === kind).length;
+      const approach = (
+        e: AgentObservation["visibleEntities"][number],
+        gather = false,
+      ): PolicyProposal => {
+        state.lastTarget = e.id;
+        if (e.distance <= INTERACTION_RANGE + e.radius)
+          return choose(
+            { type: gather ? "gather" : "pickup", entityId: e.id },
+            `Ik verzamel ${e.label ?? e.type} als materiaal voor mijn volgende maakproject.`,
+          );
+        const standOff = e.radius + 2;
+        return choose(
+          {
+            type: "move",
+            target: {
+              x:
+                e.position.x +
+                ((o.position.x - e.position.x) / e.distance) * standOff,
+              y: 0,
+              z:
+                e.position.z +
+                ((o.position.z - e.position.z) / e.distance) * standOff,
+            },
+          },
+          `Ik loop naar ${e.label ?? e.type} om materialen te verzamelen.`,
+        );
+      };
+      const torch = held.find((e) => e.itemKind === "torch" && !e.activated);
+      if (torch)
+        return choose(
+          { type: "interact", entityId: torch.id, interaction: "activate" },
+          "Ik steek mijn fakkel aan om verder te kunnen kijken.",
+        );
+      const fire = o.visibleEntities.find(
+        (e) =>
+          e.itemKind === "campfire" &&
+          !e.ownerId &&
+          !e.activated &&
+          e.distance <= INTERACTION_RANGE + e.radius,
+      );
+      if (fire)
+        return choose(
+          { type: "interact", entityId: fire.id, interaction: "activate" },
+          "Ik steek het kampvuur aan als verlicht verzamelpunt.",
+        );
+      const station = held.find(
+        (e) => e.itemKind === "workbench" || e.itemKind === "campfire",
+      );
+      if (station) {
+        const clearance = station.radius + AGENT_RADIUS + 0.5;
+        const target = Array.from({ length: 12 }, (_, i) => ({
+          x: o.position.x + Math.sin((i * Math.PI) / 6) * clearance,
+          y: 0,
+          z: o.position.z + Math.cos((i * Math.PI) / 6) * clearance,
+        })).find(
+          (p) =>
+            o.visibleEntities.every(
+              (e) =>
+                e.ownerId ||
+                distance(e.position, p) > station.radius + e.radius + 0.2,
+            ) &&
+            o.visibleAgents.every(
+              (a) => distance(a.position, p) > station.radius + AGENT_RADIUS,
+            ),
+        );
+        if (target && !(failed && previous.input.type === "drop"))
+          return choose(
+            { type: "drop", entityId: station.id, target },
+            `Ik plaats mijn ${station.label} om deze op het eiland te gebruiken.`,
+          );
+        return choose(
+          explore(8),
+          "Ik zoek een vrije plek om mijn maakwerk neer te zetten.",
+        );
+      }
+      const goals: ItemKind[] = [
+        "torch",
+        "axe",
+        "basket",
+        "workbench",
+        "pickaxe",
+        "campfire",
+      ];
+      const goal = goals.find(
+        (kind) => !state.crafted?.has(kind) && !count(kind),
+      );
+      let needed: ItemKind | undefined;
+      let nextRecipe: ItemKind | undefined;
+      const plan = (kind: ItemKind): void => {
+        const recipe = RECIPES.find((r) => r.id === kind);
+        if (!recipe) {
+          needed = kind;
+          return;
+        }
+        for (const [ingredient, quantity] of Object.entries(
+          recipe.ingredients,
+        )) {
+          if (count(ingredient as ItemKind) < quantity!) {
+            plan(ingredient as ItemKind);
+            return;
+          }
+        }
+        nextRecipe = kind;
+      };
+      if (goal) plan(goal);
+      const recipe = o.recipes.find((r) => r.id === nextRecipe);
+      if (recipe?.craftable)
+        return choose(
+          { type: "craft", recipeId: recipe.id },
+          `Ik combineer materialen tot ${ITEMS[recipe.id].label}: ${ITEMS[recipe.id].description}`,
+        );
+      if (recipe && !recipe.stationAvailable) {
+        const bench = o.visibleEntities.find(
+          (e) => e.itemKind === "workbench" && !e.ownerId,
+        );
+        if (bench) return approach(bench);
+      }
+      const candidates = o.visibleEntities.filter(
+        (e) => !e.ownerId && (state.deferred.get(e.id) ?? 0) <= o.tick,
+      );
+      const material = candidates
+        .filter((e) => e.type === "item" && e.itemKind === needed)
+        .sort((a, b) => a.distance - b.distance)[0];
+      const source = candidates
+        .filter(
+          (e) =>
+            e.type ===
+              (needed === "wood"
+                ? "tree"
+                : needed === "stone"
+                  ? "rock"
+                  : "none") && (e.remainingResources ?? 0) > 0,
+        )
+        .sort((a, b) => a.distance - b.distance)[0];
+      if (o.inventory.length < (o.inventoryCapacity ?? 24)) {
+        if (material) return approach(material);
+        if (source) return approach(source, true);
+        const extra = candidates
+          .filter(
+            (e) =>
+              e.type === "item" &&
+              e.itemKind &&
+              ["wood", "stone", "fiber", "resin", "flint"].includes(
+                e.itemKind,
+              ) &&
+              count(e.itemKind) < 4,
+          )
+          .sort((a, b) => a.distance - b.distance)[0];
+        if (extra) return approach(extra);
+      }
+      return state.turn % 3 === 1
+        ? choose(
+            { type: "look", orientation: angle },
+            `Ik zoek ${needed ? ITEMS[needed].label : "nieuwe materialen"} voor een volgend maakproject.`,
+          )
+        : choose(
+            explore(),
+            "Ik verken het eiland op zoek naar nieuwe materialen en maakmogelijkheden.",
+          );
+    }
+
     if (o.inventory.length) {
       state.focus = undefined;
       const id = o.inventory[0]!;
@@ -172,7 +346,7 @@ export function createScriptedPolicy(): DecisionPolicy {
       if (elapsedMs < 20000)
         return choose(
           { type: "wait", durationMs: Math.max(TICK_MS, 20000 - elapsedMs) },
-          `Ik houd ${name} nog even bij me voordat ik het bewust neerleg; andere vondsten wachten omdat ik maar één object kan dragen.`,
+          `Ik houd ${name} nog even bij me voordat ik het bewust neerleg; andere vondsten wachten terwijl ik deze vondst onderzoek.`,
           id,
         );
       const radius = held?.radius ?? 3;
