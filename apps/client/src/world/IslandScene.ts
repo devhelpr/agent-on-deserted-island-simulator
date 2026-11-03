@@ -119,13 +119,6 @@ export class IslandScene {
     );
     body.position.y = 2.3;
     group.add(body);
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(2.4, 2.8, 40),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.22;
-    group.add(ring);
     const nose = new THREE.Mesh(
       new THREE.ConeGeometry(0.6, 1.5, 3),
       new THREE.MeshStandardMaterial({ color: 0xffffff }),
@@ -239,10 +232,10 @@ export class IslandScene {
       } else {
         const artifact = new THREE.Mesh(
           entity.kind === "shell"
-            ? new THREE.SphereGeometry(1.3, 12, 6)
+            ? new THREE.SphereGeometry(2, 12, 6)
             : entity.kind === "relic"
-              ? new THREE.BoxGeometry(1.8, 1.8, 1.8)
-              : new THREE.OctahedronGeometry(1.8),
+              ? new THREE.BoxGeometry(2.7, 2.7, 2.7)
+              : new THREE.OctahedronGeometry(2.7),
           new THREE.MeshStandardMaterial({
             color:
               entity.kind === "shell"
@@ -255,17 +248,7 @@ export class IslandScene {
           }),
         );
         if (entity.kind === "shell") artifact.scale.set(1.4, 0.45, 1);
-        artifact.position.y = 1.8;
-        const halo = new THREE.Mesh(
-          new THREE.RingGeometry(2, 2.3, 32),
-          new THREE.MeshBasicMaterial({
-            color: 0xffdd77,
-            side: THREE.DoubleSide,
-          }),
-        );
-        halo.rotation.x = -Math.PI / 2;
-        halo.position.y = 0.15;
-        group.add(halo);
+        artifact.position.y = 3;
         group.add(artifact);
       }
       group.position.set(
